@@ -106,10 +106,10 @@ docs/            # cat-plan.md, phase-prompts.md, PROGRESS.md, server-inventory.
 
 ## 8. Befehle (bei Abweichung aktualisieren)
 
-- Backend starten: `cd backend && uv run uvicorn cat.main:app --reload`
+- Backend starten: `cd backend && uv run uvicorn cat.main:app --reload` (lokal auf diesem PC: `python -m uv ...`, siehe `docs/PROGRESS.md`)
 - Tests: `cd backend && uv run pytest`; Lint: `uv run ruff check . && uv run ruff format --check .`
 - Frontend: `cd frontend && npm run dev` / `npm test` / `npm run build`
-- Gesamtsystem: `docker compose up --build`
+- Gesamtsystem: `docker compose up --build` (Port standardmäßig nur `127.0.0.1:8080`, siehe `.env.example`)
 
 ## 9. Sicherheitsregeln für Cat selbst (verbindlich)
 
