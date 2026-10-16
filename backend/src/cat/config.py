@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     session_secret: SecretStr | None = None
     session_ttl_hours: int = 24 * 7
 
+    # "agent" = LLM mit Werkzeugen, "echo" = nur Echo (zum Testen der Oberfläche ohne LLM).
+    responder: Literal["agent", "echo"] = "agent"
     # LLM (Phase 2). Der Schlüssel steht nur in der .env auf dem Server.
     llm_model: str = "anthropic/claude-haiku-5-5"
     llm_max_tokens: int = 1500

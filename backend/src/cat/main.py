@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from cat import __version__, auth
+from cat.agent.responder import build_responder
 from cat.config import Settings, get_settings
 from cat.state import AppState
 from cat.ws import endpoint
@@ -19,6 +20,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     state = AppState(settings)
     app.state.cat = state
     app.state.auth = state.auth
+    if settings.responder == "agent":
+        state.responder = build_responder(state)
 
     if not state.auth.configured:
         log.warning("CAT_PASSWORD ist nicht gesetzt: Login ist deaktiviert")

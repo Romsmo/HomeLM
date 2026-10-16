@@ -16,6 +16,7 @@ def settings() -> Settings:
         password=PASSWORD,  # type: ignore[arg-type]
         session_secret="x" * 32,  # type: ignore[arg-type]
         static_dir=None,
+        responder="echo",
     )
 
 
