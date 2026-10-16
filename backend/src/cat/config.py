@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
         env_prefix="CAT_",
         env_file=(".env", "../.env"),
         extra="ignore",
+        populate_by_name=True,
     )
 
     host: str = "0.0.0.0"
@@ -19,6 +21,29 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     # Gebautes Frontend (im Container /app/static). Fehlt es, wird nur die API bedient.
     static_dir: Path | None = None
+
+    # Login der Weboberfläche. Ohne Passwort ist kein Login möglich (fail closed).
+    password: SecretStr | None = None
+    # Schlüssel für Sitzungs-Cookies. Leer: zufällig pro Start (Sitzungen enden beim Neustart).
+    session_secret: SecretStr | None = None
+    session_ttl_hours: int = 24 * 7
+
+    # LLM (Phase 2). Der Schlüssel steht nur in der .env auf dem Server.
+    llm_model: str = "anthropic/claude-haiku-5-5"
+    llm_max_tokens: int = 1500
+    agent_max_steps: int = 6
+    anthropic_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CAT_ANTHROPIC_API_KEY"),
+    )
+
+    # Widgets (Phase 3)
+    system_interval_s: float = 3.0
+    disk_path: str = "/"
+    weather_lat: float | None = None
+    weather_lon: float | None = None
+    weather_name: str = ""
+    weather_ttl_s: float = 600.0
 
 
 @lru_cache
