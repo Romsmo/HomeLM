@@ -7,3 +7,5 @@ __pycache__/
 .venv/
 dist/
 *.pyc
+.local/
+docker-compose.override.yml
