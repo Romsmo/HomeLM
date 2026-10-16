@@ -43,7 +43,13 @@ export default function Dashboard({
             )}
           />
         </div>
-        <Stage voice={state.voice} />
+        <Stage
+          voice={state.voice}
+          items={state.stage}
+          index={state.stageIndex}
+          onGo={(index) => dispatch({ kind: "stageGo", index })}
+          onClear={() => send({ type: "stage.clear" })}
+        />
         <div className="flex min-h-[26rem] flex-col md:min-h-0">
           <ChatPanel
             messages={state.messages}

@@ -53,3 +53,23 @@
 **Offene Punkte**
 - Nicht auf dem Server getestet (kein Zugriff): Verhalten des Cookies/Origin-Checks hinter echtem LAN-Hostnamen.
 - `CAT_PASSWORD` und `CAT_SESSION_SECRET` müssen vor dem ersten Server-Start in die `.env` eingetragen werden.
+
+## Phase 2: LLM, Tool-Calling und Stage
+
+**Gebaut**
+- `backend/src/cat/llm/`: eigene Schnittstelle (`LLMProvider`, `TextDelta`, `ToolCall`, `LLMError`), Implementierung mit LiteLLM (Streaming, Tool-Calls aus Teilstücken zusammengesetzt, Fehler in verständliche deutsche Meldungen übersetzt, ohne Schlüssel oder Interna). Standardmodell `anthropic/claude-haiku-5-5` (LiteLLM kennt es mit Tool-Unterstützung; gegen die Live-API nicht geprüft, siehe offene Punkte). LiteLLM nutzt die mitgelieferte Preisliste (`LITELLM_LOCAL_MODEL_COST_MAP`) und Telemetrie ist aus: kein Abruf von GitHub beim Start, offline lauffähig.
+- `agent/`: Tool-Registry (Risikostufe pro Werkzeug schon vorgesehen), Agent-Schleife mit Schrittlimit (`CAT_AGENT_MAX_STEPS`, Standard 6), deutscher Systemprompt (kurz, 1-2 Sätze für Sprache, Stage-Regeln, aktuelle Zeit), Chatverlauf wird auf die letzten 30 Nachrichten begrenzt und normalisiert.
+- Stage-Werkzeuge `show_html`, `show_chart`, `show_markdown`, `clear_stage`; Vorfilter (`stage/sanitize.py`: Größenlimits, entfernt iframe/object/embed/base/link/meta-http-equiv/externe Skripte). Die eigentliche Grenze ist die Sandbox im Browser.
+- Frontend: HTML in `<iframe sandbox="allow-scripts">` ohne `allow-same-origin`, strikte CSP im Dokument (kein Netzwerk, Bilder nur `data:`), feste postMessage-Schnittstelle (nur `{"type":"cat.ready"}`, nur von diesem Frame). Diagramme mit Chart.js (nur benötigte Teile registriert, wird erst bei Bedarf nachgeladen; gewählt, weil klein, Canvas-basiert und für Balken/Linie/Torte/Ring ausreichend). Markdown mit `react-markdown` + GFM-Tabellen, ohne rohes HTML. Stage-Historie (bis 20) mit Blättern und Leeren; die Historie überlebt ein Neuladen.
+- Ohne API-Schlüssel antwortet Cat im Chat mit einer klaren Anleitung statt mit einem Fehler.
+
+**Abnahme (lokal)**
+- Mit geskriptetem Pseudo-LLM im Browser geprüft: "Zeig mir eine analoge Uhr als HTML-Grafik" rendert eine laufende Uhr in der Sandbox; ein Balkendiagramm und eine Markdown-Tabelle erscheinen; Blättern (n / m) und Neuladen funktionieren.
+- CSP praktisch geprüft: Ein `fetch()` aus dem Uhr-HTML an den eigenen Server wird blockiert (keine Anfrage im Netzwerkprotokoll).
+- Tests: Backend 51 (Agent-Schleife mit gemocktem LLM, Stage-Events, Sanitizing, LiteLLM-Teilstücke, End-to-End über WebSocket), Frontend 42.
+- **Nicht bestanden / offen: echter Modellaufruf.** Es gibt lokal keinen API-Schlüssel (und er gehört nicht in den Chat), deshalb ist weder die Qualität des erzeugten HTML noch der Modellname gegen die Live-API geprüft. Erster Test nach Eintragen von `ANTHROPIC_API_KEY`: "Zeig mir eine analoge Uhr als HTML-Grafik".
+
+**Offene Punkte**
+- Datenschutz: Mit dem Agenten gehen Chatinhalte an Anthropic (so im Plan vorgesehen).
+- Docker-Image wächst durch LiteLLM deutlich; `mem_limit` wurde auf 768 MB angehoben (Messung folgt).
+- LiteLLM ist eine große Abhängigkeit; die Version ist per `uv.lock` festgenagelt, Updates bewusst und einzeln einspielen.
