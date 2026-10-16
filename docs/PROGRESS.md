@@ -34,3 +34,22 @@
 
 **Rollback**
 - Lokal: `docker compose down` und Ordner löschen. Auf dem Server wurde noch nichts verändert.
+
+## Phase 1: UI-Layout und WebSocket
+
+**Gebaut**
+- Login: `POST /api/login` (Passwort aus `CAT_PASSWORD`, Vergleich zeitkonstant), signiertes Sitzungs-Cookie (HttpOnly, SameSite=Strict, 7 Tage), Sperre nach 5 Fehlversuchen für 60 s, `GET /api/me`, `POST /api/logout`. Ohne Passwort kein Login (503). Das Cookie hat kein `Secure`-Flag, weil Cat im LAN per HTTP läuft; das ändert sich mit HTTPS (Phase 6).
+- WebSocket `/ws`: nur mit Sitzung und passendem `Origin`; typisierte Events als Pydantic-Modelle (`backend/src/cat/ws/protocol.py`), TypeScript-Spiegel in `frontend/src/protocol.ts`, Beschreibung in `docs/protocol.md` (ein Test hält alle drei synchron). Beim Verbinden wird Chatverlauf, Stage und Widget-Stand erneut gesendet.
+- Antwort vorerst Echo (wortweise gestreamt). Verlauf liegt im Speicher (Persistenz: Phase 8).
+- Frontend: Dashboard mit Header (Status, Uhr/Datum, Wetter-Platzhalter, Abmelden), Widget-Spalte links (Platzhalter), Stage mit animiertem Cat-Orb in der Mitte (idle/listening/thinking/speaking), Chat rechts (Markdown, Leeren, Export als Markdown-Datei). Layout: breit drei Spalten, Tablet Widgets oben und darunter Stage/Chat, schmal untereinander.
+- Wiederverbindung mit exponentiellem Backoff (1 s bis 15 s). Ist der Server nur weg, bleibt das Dashboard stehen; nur bei 401 geht es zur Anmeldung.
+
+**Abnahme: bestanden (lokal, im Browser geprüft)**
+- Anmelden, Nachricht senden, Echo erscheint live im Chat.
+- Backend beendet: Anzeige wechselt auf "Getrennt, verbinde neu"; Backend gestartet: nach wenigen Sekunden wieder "Online" ohne Reload.
+- Tests: Backend 19, Frontend 24 (u. a. Reconnect, Reducer, Login-Fehler, Ausfall bleibt im Dashboard).
+- Beim Browser-Test gefunden und behoben: Ein Serverausfall warf zunächst fälschlich auf die Anmeldeseite zurück (jetzt nur bei 401; Test ergänzt).
+
+**Offene Punkte**
+- Nicht auf dem Server getestet (kein Zugriff): Verhalten des Cookies/Origin-Checks hinter echtem LAN-Hostnamen.
+- `CAT_PASSWORD` und `CAT_SESSION_SECRET` müssen vor dem ersten Server-Start in die `.env` eingetragen werden.
