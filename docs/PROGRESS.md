@@ -73,3 +73,30 @@
 - Datenschutz: Mit dem Agenten gehen Chatinhalte an Anthropic (so im Plan vorgesehen).
 - Docker-Image wächst durch LiteLLM deutlich; `mem_limit` wurde auf 768 MB angehoben (Messung folgt).
 - LiteLLM ist eine große Abhängigkeit; die Version ist per `uv.lock` festgenagelt, Updates bewusst und einzeln einspielen.
+
+## Phase 3: Live-Widgets
+
+**Gebaut**
+- Plugin-System nach `CLAUDE.md` Abschnitt 10: `plugins/base.py` (`Plugin`-Protokoll mit `start/stop/tools/widgets/intents/refresh`, `WidgetSpec`, `PluginContext`, `BasePlugin`), `PluginManager` (Start/Stopp, ein kaputtes Plugin legt weder Cat noch andere Plugins lahm, Refresh-Routing), Auswahl per `CAT_PLUGINS` (Standard `system,weather`). Plugin-Werkzeuge landen automatisch in der Tool-Registry des Agenten.
+- Plugin `system` (psutil): CPU, RAM, Datenträger, Last und Uptime, Push per `widget.update` alle `CAT_SYSTEM_INTERVAL_S` Sekunden (Standard 3). Plattenzugriff im Thread, nichts blockiert den Event-Loop. Fehler erscheinen im Widget. Werkzeug `get_system_status`.
+- Plugin `weather` (Open-Meteo, kein Schlüssel): Standort per `CAT_WEATHER_LAT/LON/NAME`, Cache (`CAT_WEATHER_TTL_S`, Standard 600 s), Refresh-Knopf mit Drossel (min. 5 s), deutsche Wettertexte aus WMO-Codes, Fehler sauber im Widget ("Wetterdaten nicht erreichbar (kein Internet?)"), bei Ausfall bleibt der letzte gute Stand sichtbar. Ohne Standort kein Netzwerkzugriff, stattdessen ein Hinweis. Werkzeug `get_weather`.
+- Frontend: Widget-Darstellung nach `kind` (System mit Balken ab 85 % gelb/ab 95 % rot, Wetter mit 3-Tage-Vorhersage und Refresh, Uptime), Uhr/Datum im Header (clientseitig), Header zeigt das Wetter kurz an.
+- Container: Datenträger-Widget misst die Partition von `/data` (`CAT_DISK_PATH`).
+
+**Abnahme: bestanden (lokal, im Browser geprüft)**
+- Werte aktualisieren sich ohne Reload (Cat-Uptime lief im Browser von 12 s auf 16 s; CPU/RAM laufen live).
+- Wetter live gegen Open-Meteo abgerufen (mit lokalem CA-Bündel), Refresh-Knopf funktioniert.
+- Ausfall getestet: Ohne das CA-Bündel blockiert Norton den Abruf, das Widget zeigt "Wetterdaten nicht erreichbar (kein Internet?)", Header "Wetter: nicht verfügbar", der Rest des Dashboards läuft normal.
+- Docker-Stack lokal gebaut und gestartet: `healthy`, Login per API, Chat ohne Schlüssel liefert die Anleitung, Leerlauf ca. 50 MiB RAM.
+- Tests: Backend 67, Frontend 53 (Plugins mit gemocktem Netzwerk, Cache und Drossel, Fehlerpfade, Manager-Isolation, Live-Push über WebSocket).
+- Beim Testen gefundenen Fehler behoben: Der Refresh-Befehl über WebSocket fragte noch einen nicht vorhandenen Hook ab (Test hat es gezeigt).
+
+**Hinweise**
+- Im Container zeigen CPU, RAM, Last und Uptime die Werte des Hosts (bei Docker Desktop die der Linux-VM, daher lokal z. B. 7,7 GB statt 15,9 GB). Auf dem Debian-Server sind es die echten Serverwerte.
+- Der Datenträger zeigt nur die Partition des Datenordners, nicht die USB-SSD mit der Nextcloud (rote Linie, wird nicht gemountet).
+- Die Last wird unter Windows von psutil nur emuliert (auf dem Server korrekt).
+- Der Wetter-Standort fehlt noch (`CAT_WEATHER_LAT/LON` in der `.env`).
+
+**Offene Punkte**
+- `.env` auf dem Server anlegen: `CAT_PASSWORD`, `CAT_SESSION_SECRET`, `ANTHROPIC_API_KEY`, Wetter-Koordinaten.
+- Noch nicht umgesetzt (brauchen Server bzw. Freigaben): Server-Inventar (Schritt 2), Umsetzungsplan mit Freigabe (Schritt 3), Deployment nach `/srv/homelm`, Caddy-Route, Phase 4 (openHAB, braucht Adresse und Token) ff.

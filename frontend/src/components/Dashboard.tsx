@@ -2,7 +2,8 @@ import { useCat } from "../hooks/useCat";
 import Header from "./Header";
 import ChatPanel from "./ChatPanel";
 import Stage from "./Stage";
-import WidgetColumn, { WidgetCard } from "./WidgetColumn";
+import WidgetColumn from "./WidgetColumn";
+import { renderWidget } from "./widgets/renderWidget";
 
 export default function Dashboard({
   onUnreachable,
@@ -36,11 +37,7 @@ export default function Dashboard({
         <div className="md:col-span-2 xl:col-span-1 xl:min-h-0">
           <WidgetColumn
             widgets={state.widgets}
-            renderWidget={(w) => (
-              <WidgetCard title={w.title}>
-                <p className="text-sm text-slate-400">{w.status}</p>
-              </WidgetCard>
-            )}
+            renderWidget={(w) => renderWidget(w, (id) => send({ type: "widget.refresh", id }))}
           />
         </div>
         <Stage

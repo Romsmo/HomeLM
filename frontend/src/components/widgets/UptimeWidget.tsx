@@ -1,0 +1,26 @@
+import type { WidgetState } from "../../state/store";
+import { WidgetCard } from "../WidgetColumn";
+import { formatDuration, num } from "./format";
+
+export default function UptimeWidget({ widget }: { widget: WidgetState }) {
+  const system = num(widget.data.system_seconds);
+  const cat = num(widget.data.cat_seconds);
+  return (
+    <WidgetCard title={widget.title}>
+      {widget.status === "error" && (
+        <p role="alert" className="text-sm text-rose-400">
+          {widget.error ?? "Nicht verfügbar"}
+        </p>
+      )}
+      {widget.status === "loading" && system === null && <p className="text-sm text-slate-500">Lade …</p>}
+      {system !== null && widget.status === "ok" && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+          <dt className="text-slate-400">Server</dt>
+          <dd className="text-right tabular-nums">{formatDuration(system)}</dd>
+          <dt className="text-slate-400">Cat</dt>
+          <dd className="text-right tabular-nums">{cat !== null ? formatDuration(cat) : "–"}</dd>
+        </dl>
+      )}
+    </WidgetCard>
+  );
+}
