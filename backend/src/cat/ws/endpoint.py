@@ -83,8 +83,7 @@ async def _dispatch(
             state.stage.clear()
             await state.emit(StageClear())
         case ClientWidgetRefresh(id=widget_id):
-            refresh = getattr(state, "refresh_widget", None)
+            refresh = state.widget_refresher
             if refresh is None or not await refresh(widget_id):
-                await conn.send(
-                    ErrorEvent(message=f"Widget '{widget_id}' ist nicht aktualisierbar")
-                )
+                message = f"Widget '{widget_id}' ist nicht aktualisierbar"
+                await conn.send(ErrorEvent(message=message))

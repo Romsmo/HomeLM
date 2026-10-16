@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -6,8 +8,11 @@ from fastapi.staticfiles import StaticFiles
 from cat import __version__, auth
 from cat.agent.responder import build_responder
 from cat.config import Settings, get_settings
+from cat.plugins.manager import PluginManager
+from cat.plugins.registry import build_plugins
 from cat.state import AppState
 from cat.ws import endpoint
+from cat.ws.protocol import WidgetUpdate
 
 log = logging.getLogger("cat")
 
@@ -16,12 +21,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level.upper())
 
-    app = FastAPI(title="Cat", version=__version__)
     state = AppState(settings)
+
+    async def publish(update: WidgetUpdate) -> None:
+        state.widgets[update.id] = update
+        await state.emit(update)
+
+    plugins = PluginManager(build_plugins(settings), settings, publish)
+    state.widget_refresher = plugins.refresh
+    if settings.responder == "agent":
+        state.responder = build_responder(state, extra_tools=plugins.tools())
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        await plugins.start()
+        try:
+            yield
+        finally:
+            await plugins.stop()
+
+    app = FastAPI(title="Cat", version=__version__, lifespan=lifespan)
     app.state.cat = state
     app.state.auth = state.auth
-    if settings.responder == "agent":
-        state.responder = build_responder(state)
 
     if not state.auth.configured:
         log.warning("CAT_PASSWORD ist nicht gesetzt: Login ist deaktiviert")

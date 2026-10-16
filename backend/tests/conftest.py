@@ -17,6 +17,7 @@ def settings() -> Settings:
         session_secret="x" * 32,  # type: ignore[arg-type]
         static_dir=None,
         responder="echo",
+        plugins="",
     )
 
 

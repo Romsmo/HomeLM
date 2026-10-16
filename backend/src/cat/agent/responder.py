@@ -1,9 +1,9 @@
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from cat.agent.loop import Agent, to_llm_messages
 from cat.agent.prompt import build_system_prompt
-from cat.agent.tools import ToolContext, ToolRegistry
+from cat.agent.tools import Tool, ToolContext, ToolRegistry
 from cat.llm.base import LLMError, LLMProvider
 from cat.llm.litellm_provider import LiteLLMProvider
 from cat.stage.tools import register_stage_tools
@@ -31,13 +31,19 @@ class AgentResponder:
             yield f"Das hat leider nicht geklappt: {exc}"
 
 
-def build_registry() -> ToolRegistry:
+def build_registry(extra_tools: Sequence[Tool] = ()) -> ToolRegistry:
     registry = ToolRegistry()
     register_stage_tools(registry)
+    for tool in extra_tools:
+        registry.register(tool)
     return registry
 
 
-def build_responder(state: AppState, provider: LLMProvider | None = None) -> AgentResponder:
+def build_responder(
+    state: AppState,
+    provider: LLMProvider | None = None,
+    extra_tools: Sequence[Tool] = (),
+) -> AgentResponder:
     settings = state.settings
     provider = provider or LiteLLMProvider(
         model=settings.llm_model,
@@ -46,7 +52,7 @@ def build_responder(state: AppState, provider: LLMProvider | None = None) -> Age
     )
     agent = Agent(
         provider=provider,
-        registry=build_registry(),
+        registry=build_registry(extra_tools),
         system_prompt=build_system_prompt,
         max_steps=settings.agent_max_steps,
     )

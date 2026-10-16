@@ -12,6 +12,9 @@ services:
     ports:
       # Standard: nur lokal. Auf dem Server CAT_BIND_ADDR=192.168.0.10 setzen, nie 0.0.0.0.
       - "${CAT_BIND_ADDR:-127.0.0.1}:${CAT_HOST_PORT:-8080}:8000"
+    environment:
+      # Datenträger-Widget: Partition des Datenordners (nicht das Overlay-Dateisystem des Containers).
+      CAT_DISK_PATH: /data
     volumes:
       - ./data:/data
     mem_limit: 768m

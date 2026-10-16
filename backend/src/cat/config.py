@@ -40,13 +40,18 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CAT_ANTHROPIC_API_KEY"),
     )
 
-    # Widgets (Phase 3)
+    # Plugins (kommagetrennt) und Widgets (Phase 3)
+    plugins: str = "system,weather"
     system_interval_s: float = 3.0
     disk_path: str = "/"
     weather_lat: float | None = None
     weather_lon: float | None = None
     weather_name: str = ""
     weather_ttl_s: float = 600.0
+
+    @property
+    def enabled_plugins(self) -> list[str]:
+        return [name.strip() for name in self.plugins.split(",") if name.strip()]
 
 
 @lru_cache
