@@ -5,13 +5,18 @@ API-Stand (openHAB 4.2, geprüft gegen den laufenden Server, nur lesend):
 - POST /rest/items/{name}  (text/plain)         Befehl senden, z. B. ON, OFF, UP, 75
 - GET  /rest/events?topics=openhab/items/*/statechanged   SSE, "data:" mit JSON; "payload" ist
   ein JSON-Text mit "value". Alle 10 s kommt ein "alive"-Ereignis.
+- GET  /rest/items?fields=...    alle Items auf einmal (für die automatische Erkennung)
 - API-Token: laut Dokumentation als Benutzername bei HTTP Basic (Passwort leer).
+
+Cat verändert nichts an openHAB selbst: nur GET (lesen) und POST /rest/items/{name} mit einem Befehl
+(steuern). Kein Anlegen, Ändern oder Löschen von Items, Things oder Regeln (Test in test_backends).
 """
 
 import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 from urllib.parse import quote
@@ -19,6 +24,7 @@ from urllib.parse import quote
 import httpx
 
 from cat.devices.commands import DeviceError
+from cat.devices.discovery import discover_openhab
 from cat.devices.models import DeviceSpec
 from cat.devices.service import DeviceService, RawState
 from cat.plugins.base import BasePlugin, PluginContext
@@ -165,6 +171,43 @@ class OpenHabPlugin(BasePlugin):
         if resp.status_code >= 400:
             raise DeviceError(f"openHAB hat den Befehl abgelehnt (Fehler {resp.status_code}).")
 
+    async def discover(self) -> int:
+        """Liest alle Items auf einmal und macht daraus Geräte (devices/discovery.py).
+        Ohne `discover: openhab: enabled: true` in devices.yaml passiert nichts."""
+        config = self._devices.discover_config("openhab")
+        if config is None:
+            return 0
+        assert self._client is not None
+        try:
+            resp = await self._client.get(
+                "/rest/items",
+                params={
+                    "recursive": "false",
+                    "metadata": "none",
+                    "fields": "name,label,type,tags,groupNames,category,state",
+                },
+            )
+        except httpx.HTTPError as exc:
+            raise DeviceError("openHAB ist nicht erreichbar.") from exc
+        if resp.status_code in (401, 403):
+            raise DeviceError("openHAB verweigert den Zugriff (API-Token prüfen).")
+        if resp.status_code != 200:
+            raise DeviceError(f"openHAB antwortet mit Fehler {resp.status_code}.")
+        try:
+            items = resp.json()
+        except ValueError as exc:
+            raise DeviceError("Unerwartete Antwort von openHAB.") from exc
+        if not isinstance(items, list):
+            raise DeviceError("Unerwartete Antwort von openHAB.")
+        found = discover_openhab(items, config, self._devices.explicit_items("openhab"))
+        self._devices.set_discovered([d.spec for d in found])
+        self._devices.seed_states(
+            "openhab",
+            {str(i["name"]): parse_state(i.get("state")) for i in items if "name" in i},
+        )
+        log.info("openHAB: %d Geräte erkannt (%d Items)", len(found), len(items))
+        return len(found)
+
     # --- Hintergrund: Zustände und Änderungen ---
 
     async def _run(self) -> None:
@@ -176,7 +219,8 @@ class OpenHabPlugin(BasePlugin):
 
         while True:
             try:
-                await self._devices.refresh_all("openhab")
+                await self.discover()
+                await self._devices.refresh_all("openhab", skip_known=True)
                 await self.listen_once(on_connected=connected)
             except asyncio.CancelledError:
                 raise
@@ -191,10 +235,11 @@ class OpenHabPlugin(BasePlugin):
     async def listen_once(self, on_connected: Callable[[], None] | None = None) -> None:
         """Hält eine SSE-Verbindung, bis sie endet oder fehlschlägt."""
         assert self._client is not None
-        wanted = {s.item for s in self._devices.specs_for("openhab")}
-        if not wanted:
+        if not self._devices.specs_for("openhab"):
             await asyncio.sleep(3600)  # keine Geräte freigegeben: nichts zu beobachten
             return
+        config = self._devices.discover_config("openhab")
+        last_discovery = time.monotonic()
         async with self._client.stream(
             "GET", "/rest/events", params={"topics": "openhab/items/*/statechanged"}
         ) as resp:
@@ -204,5 +249,10 @@ class OpenHabPlugin(BasePlugin):
                 on_connected()
             async for event in iter_sse(resp.aiter_lines()):
                 change = state_change(event)
-                if change and change[0] in wanted:
+                if change and self._devices.has_item("openhab", change[0]):
                     await self._devices.on_state_change("openhab", change[0], change[1])
+                # Neue oder entfernte Items in openHAB: Erkennung regelmäßig wiederholen (der
+                # "alive"-Takt des Ereignisstroms dient als Uhr).
+                if config and time.monotonic() - last_discovery > config.refresh_s:
+                    last_discovery = time.monotonic()
+                    await self.discover()

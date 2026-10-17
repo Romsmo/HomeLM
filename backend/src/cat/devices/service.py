@@ -6,11 +6,15 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from rapidfuzz import fuzz
+
 from cat.audit import AuditLog
 from cat.devices.allowlist import Allowlist
 from cat.devices.commands import DeviceError, describe_command, is_controllable, normalize_command
 from cat.devices.confirm import ConfirmManager
+from cat.devices.discovery import DiscoverConfig
 from cat.devices.models import Control, DeviceInfo, DeviceSpec
+from cat.intents.text import fold
 from cat.ws.protocol import DeviceList, DeviceStateEvent, ServerEvent
 
 log = logging.getLogger("cat.devices")
@@ -52,6 +56,55 @@ class DeviceService:
         self._states: dict[str, RawState] = {}
         self._offline: set[str] = set()
         self.settle_delay = SETTLE_DELAY_S
+        self._discovered: list[DeviceSpec] = []
+        self._all: list[DeviceSpec] = []
+        self._by_item: dict[tuple[str, str], list[DeviceSpec]] = {}
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        """Von Hand eingetragene Geräte gelten vor erkannten (gleiches Item oder gleiche id)."""
+        explicit = list(self._allowlist.specs)
+        items = {(s.backend, s.item) for s in explicit}
+        ids = {s.id for s in explicit}
+        merged = list(explicit)
+        for spec in self._discovered:
+            if (spec.backend, spec.item) in items or spec.id in ids:
+                continue
+            merged.append(spec)
+            ids.add(spec.id)
+        self._all = merged
+        index: dict[tuple[str, str], list[DeviceSpec]] = {}
+        for spec in merged:
+            index.setdefault((spec.backend, spec.item), []).append(spec)
+        self._by_item = index
+
+    def set_discovered(self, specs: list[DeviceSpec]) -> None:
+        """Vom Backend erkannte Geräte (docs/devices.md). Ersetzt die vorige Erkennung."""
+        self._discovered = list(specs)
+        self._rebuild()
+        known = {s.id for s in self._all}
+        for stale in set(self._states) - known:
+            self._states.pop(stale, None)
+            self._offline.discard(stale)
+
+    def seed_states(self, backend: str, states: dict[str, RawState]) -> None:
+        """Zustände aus einer Sammelabfrage übernehmen (Item -> Zustand), ohne Einzelabfragen."""
+        for spec in self._all:
+            if spec.backend == backend and spec.item in states:
+                self._states[spec.id] = states[spec.item]
+                self._offline.discard(spec.id)
+
+    def discover_config(self, backend: str) -> DiscoverConfig | None:
+        """Einstellungen der automatischen Erkennung, falls eingeschaltet."""
+        cfg = self._allowlist.discover.get(backend)
+        return cfg if cfg is not None and cfg.enabled else None
+
+    def explicit_items(self, backend: str) -> set[str]:
+        """Items, die von Hand in devices.yaml stehen (die Erkennung lässt sie in Ruhe)."""
+        return {s.item for s in self._allowlist.specs if s.backend == backend}
+
+    def has_item(self, backend: str, item: str) -> bool:
+        return (backend, item) in self._by_item
 
     # --- Registrierung und Sicht ---
 
@@ -64,10 +117,16 @@ class DeviceService:
 
     @property
     def specs(self) -> list[DeviceSpec]:
-        return self._allowlist.specs
+        """Alle Geräte (von Hand eingetragene und erkannte)."""
+        return self._all
+
+    @property
+    def listed_specs(self) -> list[DeviceSpec]:
+        """Die Geräte, die in Listen, Dashboard, Fast-Path und Sprachhinweisen erscheinen."""
+        return [s for s in self._all if s.listed]
 
     def specs_for(self, backend: str) -> list[DeviceSpec]:
-        return [s for s in self._allowlist.specs if s.backend == backend]
+        return [s for s in self._all if s.backend == backend]
 
     def _controllable(self, spec: DeviceSpec) -> bool:
         if not is_controllable(spec.type) or spec.backend not in self._backends:
@@ -91,13 +150,30 @@ class DeviceService:
             test=spec.test,
         )
 
-    def snapshot(self, room: str | None = None) -> list[DeviceInfo]:
+    def snapshot(self, room: str | None = None, include_unlisted: bool = False) -> list[DeviceInfo]:
         wanted = room.strip().lower() if room else None
         return [
             self.info(s)
-            for s in self._allowlist.specs
+            for s in (self._all if include_unlisted else self.listed_specs)
             if wanted is None or s.room.lower() == wanted
         ]
+
+    def search(self, query: str, limit: int = 20) -> list[DeviceInfo]:
+        """Unscharfe Suche über Name, Raum und Synonyme aller Geräte (auch technische)."""
+        key = fold(query)
+        if not key:
+            return []
+        scored: list[tuple[float, DeviceSpec]] = []
+        for spec in self._all:
+            texts = [spec.name, spec.room, f"{spec.room} {spec.name}", *spec.synonyms]
+            best = max(
+                max(fuzz.WRatio(key, fold(t)), fuzz.partial_ratio(key, fold(t)) * 0.95)
+                for t in texts
+            )
+            if best >= 72:
+                scored.append((best, spec))
+        scored.sort(key=lambda x: (-x[0], not x[1].listed, x[1].name))
+        return [self.info(spec) for _, spec in scored[:limit]]
 
     def list_event(self) -> DeviceList:
         return DeviceList(
@@ -107,21 +183,67 @@ class DeviceService:
     def resolve(self, ref: str) -> DeviceSpec:
         """Findet ein Gerät über id oder Namen. Mehrdeutiges wird nicht geraten."""
         key = ref.strip().lower()
-        specs = self._allowlist.specs
+        specs = self._all
         exact = [s for s in specs if s.id == key]
         if not exact:
             exact = [s for s in specs if s.name.lower() == key]
         if not exact:
             exact = [s for s in specs if key in (syn.lower() for syn in s.synonyms)]
+        if not exact:
+            exact = self._resolve_loose(fold(ref))
         if len(exact) == 1:
             return exact[0]
         if len(exact) > 1:
-            names = ", ".join(f"{s.name} ({s.room})" for s in exact)
+            names = ", ".join(f"{s.name} ({s.room}, id {s.id})" for s in exact[:6])
             raise DeviceError(f"'{ref}' ist mehrdeutig: {names}. Bitte die id angeben.")
-        raise DeviceError(
-            f"Das Gerät '{ref}' gibt es nicht (oder es ist nicht freigegeben). "
-            "list_devices zeigt die verfügbaren Geräte."
+        near = self.search(ref, 4)
+        hint = (
+            " Ähnliche Geräte: " + "; ".join(f"{i.name} ({i.room}, id {i.id})" for i in near) + "."
+            if near
+            else ""
         )
+        raise DeviceError(
+            f"Das Gerät '{ref}' gibt es nicht (oder es ist nicht freigegeben).{hint} "
+            "list_devices mit query sucht in allen Geräten."
+        )
+
+    def similar_with_state(self, info: DeviceInfo) -> list[DeviceInfo]:
+        """Ähnlich benannte Geräte gleichen Typs im selben Raum, die einen Zustand melden.
+
+        In openHAB gibt es oft zwei Items für dasselbe Gerät (eines ohne Wert, eines mit). Ist der
+        Zustand unbekannt, zeigt das den Fund, ohne zu raten, welches das "richtige" ist."""
+        if info.state is not None:
+            return []
+        mine = fold(info.name)
+        found: list[tuple[float, DeviceInfo]] = []
+        for other in self.snapshot(info.room, include_unlisted=True):
+            if other.id == info.id or other.type != info.type or other.state is None:
+                continue
+            score = fuzz.partial_token_sort_ratio(mine, fold(other.name))
+            if score >= 90:
+                found.append((score, other))
+        found.sort(key=lambda x: -x[0])
+        return [i for _, i in found[:3]]
+
+    def _resolve_loose(self, key: str) -> list[DeviceSpec]:
+        """Gleiche Schreibweise ohne Umlaute, Groß-/Kleinschreibung und Unterstriche, sonst das
+        eindeutig beste unscharfe Ergebnis (nie raten, wenn zwei fast gleich gut sind)."""
+        if not key:
+            return []
+        folded = [
+            (spec, [fold(spec.name), *(fold(syn) for syn in spec.synonyms), fold(spec.id)])
+            for spec in self._all
+        ]
+        same = [spec for spec, names in folded if key in names]
+        if same:
+            return same
+        scored = sorted(
+            ((max(fuzz.WRatio(key, n) for n in names), spec) for spec, names in folded),
+            key=lambda x: -x[0],
+        )
+        if scored and scored[0][0] >= 90 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 6):
+            return [scored[0][1]]
+        return []
 
     # --- Lesen ---
 
@@ -137,16 +259,21 @@ class DeviceService:
                 log.warning("Lesen von %s fehlgeschlagen: %s", spec.id, exc)
                 self._offline.add(spec.id)
         info = self.info(spec)
-        if notify:
+        if notify and spec.listed:
             await self._emit(
                 DeviceStateEvent(id=info.id, state=info.state, unit=info.unit, online=info.online)
             )
         return info
 
-    async def refresh_all(self, backend: str | None = None) -> None:
-        for spec in self._allowlist.specs:
-            if backend is None or spec.backend == backend:
-                await self.refresh_one(spec, notify=False)
+    async def refresh_all(self, backend: str | None = None, skip_known: bool = False) -> None:
+        """Alle Zustände neu lesen. `skip_known`: nur Geräte ohne bekannten Zustand (nach einer
+        Sammelabfrage sind die erkannten Geräte schon aktuell)."""
+        for spec in self._all:
+            if backend is not None and spec.backend != backend:
+                continue
+            if skip_known and spec.id in self._states and spec.id not in self._offline:
+                continue
+            await self.refresh_one(spec, notify=False)
         await self._emit(self.list_event())
 
     async def get_state(self, ref: str) -> DeviceInfo:
@@ -154,10 +281,10 @@ class DeviceService:
 
     async def on_state_change(self, backend: str, item: str, raw: RawState) -> None:
         """Vom Backend bei Änderungen aufgerufen (SSE bzw. WebSocket)."""
-        for spec in self._allowlist.specs:
-            if spec.backend == backend and spec.item == item:
-                self._states[spec.id] = raw
-                self._offline.discard(spec.id)
+        for spec in self._by_item.get((backend, item), []):
+            self._states[spec.id] = raw
+            self._offline.discard(spec.id)
+            if spec.listed:  # technische Geräte melden sich nicht ständig beim Browser
                 await self._emit(
                     DeviceStateEvent(id=spec.id, state=raw.state, unit=raw.unit, online=True)
                 )

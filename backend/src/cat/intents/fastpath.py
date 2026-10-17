@@ -111,17 +111,17 @@ class FastPath:
         self._vocab = vocab
 
     def _rooms(self) -> list[str]:
-        return sorted({fold(s.room) for s in self._devices.specs})
+        return sorted({fold(s.room) for s in self._devices.listed_specs})
 
     def match(self, text: str, default_room: str | None = None) -> tuple[Parsed, DeviceSpec] | None:
         """Parser und Zuordnung (rein, ohne Netzwerk)."""
-        if not self._devices.specs:
+        if not self._devices.listed_specs:
             return None
         parsed = parse(text, self._rooms(), self._vocab)
         if parsed is None:
             return None
         infos = {i.id: i for i in self._devices.snapshot()}
-        spec = select_device(parsed, self._devices.specs, infos, default_room)
+        spec = select_device(parsed, self._devices.listed_specs, infos, default_room)
         return (parsed, spec) if spec else None
 
     async def handle(self, text: str, default_room: str | None = None) -> FastPathResult | None:
@@ -139,6 +139,9 @@ class FastPath:
             else:
                 info = await self._devices.get_state(spec.id)
                 answer = state_text(spec, info, parsed)
+                for other in self._devices.similar_with_state(info)[:1]:
+                    other_spec = self._devices.resolve(other.id)
+                    answer += f" Ähnliches Gerät: {state_text(other_spec, other, parsed)}"
                 command = None
         except DeviceError as exc:
             answer, command = str(exc), parsed.command

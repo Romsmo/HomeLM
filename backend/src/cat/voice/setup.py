@@ -20,8 +20,8 @@ PROMPT_LIMIT = 220
 def recognition_prompt(devices: DeviceService) -> str:
     """Hinweistext für Whisper: Raum- und Gerätenamen verbessern die Erkennung ("Küche" statt
     "Kiche"). Whisper nutzt nur die letzten ~220 Zeichen, daher kurz halten."""
-    rooms = sorted({s.room for s in devices.specs})
-    names = [s.name for s in devices.specs][:12]
+    rooms = sorted({s.room for s in devices.listed_specs})[:12]
+    names = [s.name for s in devices.listed_specs][:12]
     if not rooms:
         return ""
     text = "Smart Home: " + ", ".join([*rooms, *names, "Licht", "Rollladen", "Heizung"]) + "."

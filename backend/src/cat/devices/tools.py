@@ -8,6 +8,8 @@ from cat.devices.models import DeviceInfo
 from cat.devices.service import DeviceService
 from cat.ws.protocol import StageShow
 
+LIST_LIMIT = 40
+
 _TYPE_DE = {
     "light": "Licht",
     "switch": "Schalter",
@@ -25,7 +27,7 @@ def format_device(info: DeviceInfo) -> str:
     if not info.online:
         state = "offline"
     elif info.state is None:
-        state = "unbekannt"
+        state = "unbekannt (kein Wert gemeldet)"
     else:
         state = f"{info.state} {info.unit}".strip() if info.unit else info.state
     steuerbar = "steuerbar" if info.controllable else "nur lesbar"
@@ -38,22 +40,58 @@ def format_device(info: DeviceInfo) -> str:
 def build_device_tools(service: DeviceService) -> list[Tool]:
     async def list_devices(args: dict[str, Any], _: ToolContext) -> str:
         room = args.get("room")
-        infos = service.snapshot(room if isinstance(room, str) and room else None)
-        if not infos:
+        room = room.strip() if isinstance(room, str) else ""
+        query = args.get("query")
+        query = query.strip() if isinstance(query, str) else ""
+        if query:
+            infos = service.search(query, 60)
             if room:
-                return f"Im Raum '{room}' gibt es keine freigegebenen Geräte."
+                infos = [i for i in infos if i.room.lower() == room.lower()]
+        else:
+            infos = service.snapshot(room or None)
+        if not infos:
+            if query:
+                return f"Zu '{query}' gibt es kein Gerät."
+            if room:
+                return f"Im Raum '{room}' gibt es keine Geräte."
             return "Es sind keine Geräte freigegeben (Allowlist leer)."
-        header = "id | Name | Raum | Typ | Zustand | Risiko | Steuerung"
-        return "\n".join([header, *(format_device(i) for i in infos)])
+        shown = infos[:LIST_LIMIT]
+        lines = ["id | Name | Raum | Typ | Zustand | Risiko | Steuerung"]
+        lines += [format_device(i) for i in shown]
+        if len(infos) > len(shown):
+            lines.append(
+                f"... und {len(infos) - len(shown)} weitere. Mit room oder query eingrenzen."
+            )
+        if not query and not room:
+            rooms: dict[str, int] = {}
+            for info in infos:
+                rooms[info.room] = rooms.get(info.room, 0) + 1
+            lines.append("Räume: " + ", ".join(f"{r} ({n})" for r, n in sorted(rooms.items())))
+            extra = len(service.specs) - len(service.listed_specs)
+            if extra > 0:
+                lines.append(
+                    f"Dazu {extra} technische Geräte (Status, Anlagen), die nur über query "
+                    "gefunden werden."
+                )
+        return "\n".join(lines)
 
     async def get_state(args: dict[str, Any], _: ToolContext) -> str:
         ref = args.get("device")
         if not isinstance(ref, str) or not ref:
             raise ToolError("Parameter 'device' fehlt.")
         try:
-            return format_device(await service.get_state(ref))
+            info = await service.get_state(ref)
         except DeviceError as exc:
             raise ToolError(str(exc)) from exc
+        lines = [format_device(info)]
+        similar = service.similar_with_state(info)
+        if similar:
+            lines.append(
+                "Hinweis: Für dieses Gerät meldet openHAB keinen Wert. Ähnliche Geräte mit Wert "
+                "(ob sie dasselbe Gerät sind, ist unklar):"
+            )
+            lines += [format_device(i) for i in similar]
+        return "\n".join(lines)
 
     async def set_state(args: dict[str, Any], _: ToolContext) -> str:
         ref, command = args.get("device"), args.get("command")
@@ -77,10 +115,17 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         Tool(
             name="list_devices",
             description=(
-                "Listet die freigegebenen Smart-Home-Geräte mit Raum, Typ, Zustand und Risiko. "
-                "Nur diese Geräte existieren für dich."
+                "Listet Smart-Home-Geräte mit Raum, Typ, Zustand und Risiko, oder sucht sie: "
+                "mit query (Name, Raum oder Stichwort, z. B. 'Rollo Roman') findest du jedes "
+                "Gerät, auch technische. Nur diese Geräte existieren für dich."
             ),
-            parameters={"type": "object", "properties": {"room": room_param}},
+            parameters={
+                "type": "object",
+                "properties": {
+                    "room": room_param,
+                    "query": {"type": "string", "description": "Suchbegriff (optional)."},
+                },
+            },
             handler=list_devices,
         ),
         Tool(

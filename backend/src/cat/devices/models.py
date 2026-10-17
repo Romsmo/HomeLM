@@ -45,6 +45,8 @@ class DeviceSpec(BaseModel):
     # Testgeräte dürfen schon gesteuert werden, bevor echte Geräte freigegeben sind.
     test: bool = False
     synonyms: list[str] = Field(default_factory=list, max_length=20)
+    # False: technisches Gerät, nur auf Nachfrage (Suche, get_state), nicht in Listen und Dashboard.
+    listed: bool = True
     # Überschreibt die Standardübersetzung der Befehle ("unlock": "OFF").
     command_map: dict[str, str] = Field(default_factory=dict)
 

@@ -2,9 +2,43 @@
 
 ## Überblick
 
-Cat sieht und steuert nur Geräte aus der **Allowlist** `data/config/devices.yaml` (auf dem Server `/srv/homelm/data/config/devices.yaml`). openHAB hat auf diesem Server rund 500 Items. Davon kennt Cat nur die, die Sie dort eintragen. Die Datei wird beim Start gelesen: nach einer Änderung `docker compose restart` im Ordner `/srv/homelm`.
+Cat sieht und steuert nur Geräte aus der **Allowlist** `data/config/devices.yaml` (auf dem Server `/srv/homelm/data/config/devices.yaml`) und, wenn eingeschaltet, die automatisch erkannten openHAB-Items (nächster Abschnitt). openHAB hat auf diesem Server rund 500 Items. Die Datei wird beim Start gelesen: nach einer Änderung `docker compose restart` im Ordner `/srv/homelm`.
 
 Ist die Datei fehlerhaft, sieht Cat **keine** Geräte (fail closed), und das Geräte-Panel zeigt die Fehlermeldung.
+
+## Alle openHAB-Items automatisch (empfohlen)
+
+Statt jedes Gerät einzutragen, erkennt Cat alle Items von openHAB selbst. In `devices.yaml`:
+
+```yaml
+discover:
+  openhab:
+    enabled: true
+    readonly_patterns: []   # zusätzliche Regex (ohne Groß-/Kleinschreibung), nur lesen
+    unlisted_patterns: []   # zusätzliche Regex, nur auf Nachfrage, nicht in Listen
+    exclude_patterns: []    # zusätzliche Regex, ganz ausblenden
+devices: []                 # von Hand eingetragene Geräte gelten vor den erkannten
+```
+
+So wird erkannt (alles aus der Item-Liste von openHAB, mit **einer** Abfrage, danach kommen Änderungen per Ereignisstrom; alle 10 Minuten wird neu erkannt):
+
+| openHAB-Item | Cat-Gerät | Raum |
+|---|---|---|
+| `Switch` (mit Tag `Light`) | `light` / `switch`, steuerbar | der nächste `Location`-Gruppen-Vorfahre des semantischen Modells (z. B. "Romans Zimmer"), sonst "Haus" |
+| `Dimmer`, `Color` | `dimmer` (Helligkeit), steuerbar | wie oben |
+| `Rollershutter` | `shutter`, steuerbar (0 = offen, 100 = zu) | wie oben |
+| `Number`, `String`, `DateTime` | `sensor`, nur lesbar | wie oben |
+| `Group`, `Image`, `Player` | übersprungen | |
+
+Name ist das Etikett des Items (bei gleichen Namen im Raum der lesbare Item-Name), der Item-Name ist als Synonym ansprechbar.
+
+**Vorsichtsregeln (nur lesbar, kein Steuern):** Schlösser, Türöffner, Garagentore, Alarm und Sirenen; Technik wie Statusanzeigen der Automatisierung (`Stat...`, Status, Maintenance, Script, Automation), Wärmepumpe/Luxtronik, Lüftungsanlage (ComfoAir), Heizung, Trigger, Reboot und Test. Cat kann sie lesen und darüber Auskunft geben, aber nie verstellen. Will man ein Schloss oder Tor doch steuern, trägt man es von Hand mit `command_map` ein (dann gilt die Bestätigungspflicht).
+
+**Listen:** Im Dashboard und in `list_devices` erscheinen nur Geräte, die man im Alltag meint (steuerbare Geräte und Messwerte wie Temperatur oder Leistung). Szenen, Farbtemperaturen, RSSI, Rohtexte, Zeiten und Technik sind nur über die Suche zu finden (`list_devices` mit `query`, `get_state`), z. B. "Wie ist die Außentemperatur?" oder "Ist der Bypass der Lüftung offen?".
+
+**Nichts an openHAB wird verändert:** Cat liest (GET) und sendet Befehle an Items (POST mit einem Befehl wie ON, OFF, UP, 50). Es legt keine Items, Things oder Regeln an, ändert oder löscht keine (im Test geprüft: nie PUT oder DELETE).
+
+**Doppelte Items:** In openHAB gibt es für manche Rollläden zwei Items (eines mit schön benanntem Etikett ohne Wert, eines technisch benannten mit Wert). Hat ein Gerät keinen Wert, nennt Cat ähnliche Geräte mit Wert, ohne zu raten, ob es dasselbe ist. Wer das dauerhaft lösen will, blendet das falsche mit `exclude_patterns` aus oder trägt das richtige von Hand ein.
 
 ## Eintrag
 

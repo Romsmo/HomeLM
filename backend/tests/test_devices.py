@@ -320,6 +320,7 @@ async def test_tools_list_get_set_and_show(tmp_path: Path) -> None:
 async def test_empty_allowlist_tells_model_there_are_no_devices(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     h.service._allowlist.specs.clear()
+    h.service._rebuild()
     out = await {t.name: t for t in build_device_tools(h.service)}["list_devices"].handler(
         {}, tool_ctx(h)
     )
