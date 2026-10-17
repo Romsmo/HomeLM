@@ -12,8 +12,8 @@ Oder lokal mit PyYAML:
 
 Das Token wird genau einmal ausgegeben (in die config.yaml des Satelliten eintragen). In
 `data/config/satellites.yaml` landet nur der SHA-256-Hash. Ein bestehender Eintrag mit derselben
-id bekommt ein neues Token (das alte ist dann ungültig). Danach Cat neu starten, damit das
-Register neu gelesen wird: `docker compose restart backend`.
+id bekommt ein neues Token (das alte ist dann ungültig). Cat liest das Register bei jeder
+Änderung selbst neu ein, ein Neustart ist nicht nötig.
 """
 
 import argparse
@@ -21,6 +21,7 @@ import hashlib
 import os
 import re
 import secrets
+import sys
 from pathlib import Path
 
 import yaml
@@ -32,6 +33,9 @@ def hash_token(token: str) -> str:
 
 
 def main() -> None:
+    # Umlaute in Hinweisen und Räumen auch dann korrekt ausgeben, wenn Windows cp1252 vorgibt.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
@@ -57,7 +61,7 @@ def main() -> None:
     print(f"Satellit '{args.id}' (Raum {args.room}) eingetragen in {path}")
     print("Token (nur jetzt sichtbar, in die config.yaml des Satelliten eintragen):")
     print(token)
-    print("Danach Cat neu starten: docker compose restart backend")
+    print("Cat liest die Datei selbst neu ein, ein Neustart ist nicht nötig.")
 
 
 if __name__ == "__main__":

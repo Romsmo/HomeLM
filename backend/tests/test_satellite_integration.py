@@ -369,3 +369,31 @@ def test_token_script_rejects_bad_ids(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert run.returncode != 0 and not (tmp_path / "config").exists()
+
+
+def test_registry_picks_up_new_changed_and_removed_satellites_without_restart(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "s.yaml"
+    entry = {"id": "a", "room": "Küche", "token_sha256": hash_token("a" * 40)}
+    path.write_text(yaml.safe_dump({"satellites": [entry]}), encoding="utf-8")
+    reg = SatelliteRegistry.load(path)
+    assert reg.authenticate("a" * 40) is not None
+    assert reg.authenticate("b" * 40) is None  # noch unbekannt
+
+    # neuer Satellit kommt dazu (anderer Dateiinhalt, also andere Größe/Zeit)
+    second = {"id": "b", "room": "Flur", "token_sha256": hash_token("b" * 40)}
+    path.write_text(yaml.safe_dump({"satellites": [entry, second]}), encoding="utf-8")
+    assert reg.authenticate("b" * 40) is not None and len(reg.listing()) == 2
+
+    # Sperren: Eintrag löschen gilt sofort
+    path.write_text(yaml.safe_dump({"satellites": [second]}), encoding="utf-8")
+    assert reg.authenticate("a" * 40) is None and reg.authenticate("b" * 40) is not None
+
+    # kaputte Datei: niemand kommt herein, auch die Bisherigen nicht (fail closed)
+    path.write_text("{kaputt: [", encoding="utf-8")
+    assert reg.authenticate("b" * 40) is None and reg.error
+
+    # Datei weg: keine Satelliten
+    path.unlink()
+    assert reg.authenticate("b" * 40) is None and reg.satellites == {}

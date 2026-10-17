@@ -42,12 +42,34 @@ class SatelliteRegistry:
     error: str | None = None
     connected: dict[str, float] = field(default_factory=dict)  # id -> verbunden seit
     limiter: LoginLimiter = field(default_factory=lambda: LoginLimiter(10, 60.0))
+    path: Path | None = None
+    _stamp: tuple[int, int] | None = None  # (Änderungszeit, Größe) beim letzten Einlesen
 
     @classmethod
     def load(cls, path: Path) -> "SatelliteRegistry":
-        registry = cls()
-        if not path.is_file():
-            return registry
+        registry = cls(path=path)
+        registry._read()
+        return registry
+
+    def _signature(self) -> tuple[int, int] | None:
+        try:
+            stat = self.path.stat() if self.path else None
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size) if stat else None
+
+    def _refresh(self) -> None:
+        """Neue oder geänderte Satelliten gelten sofort, ohne Neustart von Cat."""
+        if self._signature() != self._stamp:
+            self._read()
+
+    def _read(self) -> None:
+        path = self.path
+        self.satellites = {}
+        self.error = None
+        self._stamp = self._signature()
+        if path is None or not path.is_file():
+            return
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             entries = raw.get("satellites", []) if isinstance(raw, dict) else None
@@ -58,21 +80,21 @@ class SatelliteRegistry:
                 digest = str(entry["token_sha256"]).lower()
                 if not _ID.match(sid) or not room or not re.fullmatch(r"[0-9a-f]{64}", digest):
                     raise ValueError(f"Ungültiger Eintrag für '{sid}'")
-                if sid in registry.satellites:
+                if sid in self.satellites:
                     raise ValueError(f"Doppelte id '{sid}'")
-                registry.satellites[sid] = (Satellite(sid, room), digest)
+                self.satellites[sid] = (Satellite(sid, room), digest)
         except (yaml.YAMLError, ValueError, KeyError, TypeError) as exc:
             # Fail closed: eine kaputte Datei lässt keinen Satelliten herein.
-            registry.satellites.clear()
-            registry.error = f"satellites.yaml: {exc}"
-            log.warning("%s", registry.error)
-        return registry
+            self.satellites.clear()
+            self.error = f"satellites.yaml: {exc}"
+            log.warning("%s", self.error)
 
     def authenticate(self, token: str, source: str = "?") -> Satellite | None:
         """Gibt den Satelliten zu einem gültigen Token zurück. Nach vielen Fehlversuchen von
         derselben Quelle wird kurz gesperrt."""
         if self.limiter.retry_after(source) > 0:
             return None
+        self._refresh()
         candidate = hash_token(token)
         match: Satellite | None = None
         for satellite, digest in self.satellites.values():  # immer alle prüfen: gleiche Laufzeit
@@ -91,6 +113,7 @@ class SatelliteRegistry:
         self.connected.pop(satellite.id, None)
 
     def listing(self) -> list[dict[str, object]]:
+        self._refresh()
         return [
             {
                 "id": sat.id,

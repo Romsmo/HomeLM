@@ -57,10 +57,9 @@ Auf dem **Server** (nicht auf dem Pi):
 ```bash
 cd /srv/homelm
 docker compose exec -T backend python - kueche-pi Küche --data /data < scripts/satellite_token.py
-docker compose restart backend
 ```
 
-Das gibt ein **Token** aus, das nur dieses eine Mal zu sehen ist (auf dem Server steht nur sein Hash in `data/config/satellites.yaml`). Raum genau so schreiben wie in der Geräte-Allowlist. Ein Satellit pro Aufruf; ein erneuter Aufruf mit derselben ID erzeugt ein neues Token und macht das alte ungültig.
+Das gibt ein **Token** aus, das nur dieses eine Mal zu sehen ist (auf dem Server steht nur sein Hash in `data/config/satellites.yaml`). Raum genau so schreiben wie in der Geräte-Allowlist. Cat liest das Register bei jeder Änderung selbst neu ein (kein Neustart nötig). Ein Satellit pro Aufruf; ein erneuter Aufruf mit derselben ID erzeugt ein neues Token und macht das alte sofort ungültig. Einen Satelliten sperren: seinen Eintrag aus `data/config/satellites.yaml` löschen.
 
 ## 4. Konfiguration auf dem Pi
 
@@ -97,7 +96,7 @@ Der Dienst startet beim Booten und nach Abstürzen neu und verbindet sich nach N
 
 ## Fehlersuche
 
-- **"Der Server lehnt die Verbindung ab":** Token falsch, Satellit nicht eingetragen (Server nicht neu gestartet?) oder `CAT_VOICE=false`. Nach 10 falschen Versuchen sperrt der Server die Quelle eine Minute.
+- **"Der Server lehnt die Verbindung ab":** Token falsch, Satellit nicht eingetragen oder `CAT_VOICE=false`. Nach 10 falschen Versuchen sperrt der Server die Quelle eine Minute.
 - **Löst ständig aus oder gar nicht:** `wakeword_threshold` anpassen (höher = strenger).
 - **Hört sich selbst:** Konferenzlautsprecher mit Echo-Unterdrückung verwenden oder Lautstärke senken. Während der Antwort wertet der Satellit das Mikrofon nicht aus; danach gilt `cooldown_s`.
 - **Erkennung schlecht:** Mikrofon näher, `CAT_STT_MODEL=small` am Server (Standard), siehe `docs/voice.md`.
