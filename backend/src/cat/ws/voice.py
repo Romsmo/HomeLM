@@ -128,6 +128,7 @@ async def voice_endpoint(ws: WebSocket) -> None:
         while True:
             message = await ws.receive()
             if message["type"] == "websocket.disconnect":
+                log.info("Sprach-WebSocket geschlossen (Code %s)", message.get("code"))
                 break
             if (data := message.get("bytes")) is not None:
                 if len(data) > MAX_FRAME:

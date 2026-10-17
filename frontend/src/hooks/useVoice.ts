@@ -26,6 +26,7 @@ async function fetchInfo(): Promise<VoiceInfo | null> {
 }
 
 const PREF_KEY = "cat.mic";
+const MAX_RETRIES = 6;
 
 function micWanted(): boolean {
   try {
@@ -54,6 +55,11 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
   const [error, setError] = useState<string | null>(null);
   const client = useRef<VoiceClient | null>(null);
   const autoTried = useRef(false);
+  const manualStop = useRef(false);
+  const retries = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastError = useRef<string | null>(null);
+  const startRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!connected) return;
@@ -66,7 +72,14 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
     };
   }, [connected]);
 
-  useEffect(() => () => client.current?.stop(), []);
+  useEffect(
+    () => () => {
+      manualStop.current = true;
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      client.current?.stop();
+    },
+    [],
+  );
 
   const secure = typeof window !== "undefined" && window.isSecureContext;
   const hasMedia = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
@@ -78,24 +91,46 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
   }
 
   const start = useCallback(() => {
+    manualStop.current = false;
+    lastError.current = null;
+    if (retryTimer.current) clearTimeout(retryTimer.current);
     setError(null);
     const c = new VoiceClient({
       onState: (s) => {
         setState(s);
-        if (s === "off") client.current = null;
+        if (s === "ready" || s === "listening") retries.current = 0;
+        if (s === "off") {
+          client.current = null;
+          // Die Verbindung riss von selbst ab (Netz, Proxy, Neustart): nach kurzer Pause neu versuchen.
+          // Nicht bei Absicht (Mikrofon aus) und nicht, wenn das Mikrofon selbst nicht geht.
+          const micProblem = lastError.current?.startsWith("Mikrofon") ?? false;
+          if (!manualStop.current && !micProblem && retries.current < MAX_RETRIES) {
+            const wait = Math.min(30_000, 2000 * 2 ** retries.current);
+            retries.current += 1;
+            retryTimer.current = setTimeout(() => startRef.current(), wait);
+          }
+        }
       },
       onEvent: (e) => {
         if (e.type === "voice.latency") setLatency(formatLatency(e));
       },
-      onError: setError,
+      onError: (message) => {
+        lastError.current = message;
+        setError(message);
+      },
     });
     client.current = c;
     void c.start();
   }, []);
 
+  startRef.current = start;
+
   const toggle = useCallback(() => {
     if (client.current) {
       rememberMic(false);
+      manualStop.current = true;
+      retries.current = 0;
+      if (retryTimer.current) clearTimeout(retryTimer.current);
       client.current.stop();
       client.current = null;
       return;

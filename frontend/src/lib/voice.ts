@@ -160,7 +160,13 @@ export class VoiceClient {
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onmessage = (msg) => this.onMessage(msg);
-    ws.onclose = () => this.stop();
+    ws.onclose = (e) => {
+      // Ungewöhnliches Ende (nicht von uns, nicht sauber): Code und Grund nennen, das hilft bei der Suche.
+      if (this.ws === ws && e.code !== 1000 && e.code !== 1005) {
+        this.cb.onError(`Sprachverbindung beendet (Code ${e.code}${e.reason ? `: ${e.reason}` : ""}).`);
+      }
+      this.stop();
+    };
     ws.onerror = () => this.cb.onError("Sprachverbindung gestört.");
     if (this.node) {
       this.node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
