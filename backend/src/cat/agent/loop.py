@@ -76,13 +76,19 @@ class Agent:
 
         corrections = 0
         guard = self._registry.get("set_state") is not None
+        # Befehl (keine Frage) über Geräte: erst erledigt, wenn set_state lief. Kleine Modelle
+        # lesen gern erst den Zustand und kündigen dann nur an ("Ich schalte es aus").
+        command = ctx.device_related and not is_question(_last_user_text(history))
         for _ in range(self._max_steps):
             step_text: list[str] = []
             calls: list[ToolCall] = []
             held: list[str] = []
             started = False  # in diesem Schritt schon Text ausgegeben?
             # Unbelegte Behauptungen über Geräte abfangen, solange noch kein Gerätewerkzeug lief.
-            hold = guard and not any(t.tool in DEVICE_TOOLS for t in ctx.trace)
+            hold = guard and (
+                not any(t.tool in DEVICE_TOOLS for t in ctx.trace)
+                or (command and not any(t.tool == "set_state" for t in ctx.trace))
+            )
 
             model_started = time.perf_counter()
             async for event in self._provider.stream(system, messages, schemas):

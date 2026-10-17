@@ -185,6 +185,19 @@ async def test_a_command_misrouted_to_get_state_still_gets_executed(tmp_path: Pa
     assert len(provider.calls) == 2
 
 
+async def test_a_command_that_is_only_announced_after_reading_the_state_is_executed(
+    tmp_path: Path,
+) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider(
+        [ToolCall("c1", "get_state", {"device": "Deckenlicht Roman"})],
+        [TextDelta("Das Licht ist an. Ich schalte es aus.")],
+        [ToolCall("c2", "set_state", {"device": "Deckenlicht Roman", "command": "off"})],
+    )
+    out, _ = await run(agent_for(service, provider), "Mach das Deckenlicht aus", True)
+    assert out == "Okay, Deckenlicht Roman ist aus." and backend.sent == [("roman", "off")]
+
+
 async def test_device_talk_without_a_tool_is_not_shown_unverified(tmp_path: Path) -> None:
     service, _ = make(tmp_path)
     provider = FakeProvider(
