@@ -22,6 +22,8 @@ Claude-Brücke (Container, Claude Code CLI, Abo) --- Text (+ HTML für die Stage
 |---|---|
 | Das lokale Modell ruft selbst `ask_claude` auf (laut Prompt bei: schwierigen Fragen, aktuellen Fakten, Tiefgang, langen Texten, Programmieren, HTML-Grafiken, Planen, langen Zusammenfassungen) | "Zeig mir eine animierte Uhr", "Erkläre mir die Steuerklassen" |
 | Der Nutzer verlangt es ausdrücklich | "Frag mal Claude, ...", "Lass Claude das beantworten", "Claude soll das erklären" |
+| Die Aufgabe ist sicher zu schwer für das lokale Modell (Schlüsselwörter: animiert, Animation, HTML, Webseite, zeichne, programmiere, Skript/Code schreiben) | "Zeig mir auf der Stage eine animierte Uhr" geht direkt an Claude, ohne dass das kleine Modell erst "kann ich nicht" sagt |
+| Die ersten ca. 120 Zeichen der lokalen Antwort klingen nach Absage ("kann ich leider nicht", "weiß ich nicht", "keine Möglichkeit", "bin mir nicht sicher"), ohne dass ein Werkzeug lief | die Absage wird nicht angezeigt, Claude antwortet stattdessen (gilt nur, solange Claude verfügbar ist) |
 | Das lokale Modell fällt aus (Ollama aus, Zeitüberschreitung, Speichermangel), bevor es etwas gesagt hat | Ollama-Container gestoppt |
 | Das lokale Modell braucht zu viele Werkzeugschritte (4) oder sagt nichts | verheddert sich bei einer Aufgabe |
 

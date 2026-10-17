@@ -46,7 +46,7 @@ SPOKEN_HINT = (
     "Aufzählungen, keine Sonderzeichen. Stelle bei Bedarf genau eine kurze Rückfrage."
 )
 # So viele Zeichen der lokalen Antwort werden zurückgehalten, um eine Absage zu erkennen.
-HEAD_CHARS = 200
+HEAD_CHARS = 120
 # Wie lange Claude nach einem Fehler ruht (Sekunden).
 BLOCK_LIMIT_S = 30 * 60
 BLOCK_AUTH_S = 60 * 60
