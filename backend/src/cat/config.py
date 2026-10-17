@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     sandbox: bool = True
     # Sprache (Phase 6): STT faster-whisper, TTS Piper, VAD Silero. Modelle in data/models.
     voice: bool = False
-    stt_model: str = "base"  # base oder small, siehe docs/voice.md (Messung)
+    stt_model: str = "small"  # small (Standard, nach Messung) oder base, siehe docs/voice.md
     stt_compute: str = "int8"
     stt_threads: int = 4
     tts_voice: str = "de_DE-thorsten-medium"
