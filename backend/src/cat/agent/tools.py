@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -13,10 +13,20 @@ class ToolError(Exception):
     """Erwarteter Fehler eines Werkzeugs; der Text geht an das Modell zurück."""
 
 
+@dataclass(frozen=True)
+class Escalation:
+    """Das lokale Modell kommt nicht weiter und reicht die Frage an Claude weiter."""
+
+    reason: str  # "model" (ask_claude), "limit" (zu viele Schritte), "empty", "failed"
+    question: str = ""
+
+
 @dataclass
 class ToolContext:
     emit: Callable[[ServerEvent], Awaitable[None]]
     stage: StageStore
+    # Vom Agenten gesetzt, wenn er abbricht, weil Claude übernehmen soll (siehe agent/router.py).
+    escalation: Escalation | None = None
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[str]]
@@ -43,6 +53,14 @@ class ToolRegistry:
 
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
+
+    def names(self) -> list[str]:
+        return list(self._tools)
+
+    def only(self, names: Iterable[str]) -> "ToolRegistry":
+        """Neue Registry mit nur diesen Werkzeugen (die lokale KI bekommt eine kleine Auswahl)."""
+        wanted = set(names)
+        return ToolRegistry({n: t for n, t in self._tools.items() if n in wanted})
 
     def schemas(self) -> list[ToolSchema]:
         return [

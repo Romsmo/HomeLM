@@ -2,7 +2,7 @@ import json
 import logging
 from collections.abc import AsyncIterator, Callable
 
-from cat.agent.tools import ToolContext, ToolError, ToolRegistry
+from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry
 from cat.audit import AuditLog
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
@@ -21,12 +21,22 @@ class Agent:
         system_prompt: Callable[[], str],
         max_steps: int = 6,
         audit: AuditLog | None = None,
+        escalate_tool: str | None = None,
+        extra_in_user: bool = False,
     ) -> None:
         self._provider = provider
         self._registry = registry
         self._system_prompt = system_prompt
         self._max_steps = max_steps
         self._audit = audit
+        # Lokal-zuerst-Modus: Ruft das Modell dieses Werkzeug auf (ask_claude), bricht der Agent
+        # ab und setzt `ctx.escalation`; die Schleife wird dann nicht "zu lang", sondern
+        # übergibt (kein LIMIT_NOTICE). Der Router fragt Claude.
+        self._escalate_tool = escalate_tool
+        # Zeit und Erinnerungen an die letzte Nutzernachricht hängen statt an den Systemprompt.
+        # Der Systemprompt samt Werkzeugen bleibt dadurch unverändert, und Ollama muss ihn nicht
+        # jedes Mal neu verarbeiten (auf der CPU sind das sonst über eine Minute).
+        self._extra_in_user = extra_in_user
 
     async def run(
         self, history: list[Message], ctx: ToolContext, system_extra: str = ""
@@ -35,7 +45,11 @@ class Agent:
         messages = list(history)
         schemas = self._registry.schemas()
         wrote_text = False
-        system = self._system_prompt() + (f"\n\n{system_extra}" if system_extra else "")
+        system = self._system_prompt()
+        if system_extra and self._extra_in_user:
+            messages = _with_context(messages, system_extra)
+        elif system_extra:
+            system += f"\n\n{system_extra}"
 
         for _ in range(self._max_steps):
             step_text: list[str] = []
@@ -54,11 +68,18 @@ class Agent:
             if not calls:
                 return
 
+            if self._escalate_tool and (asked := _find(calls, self._escalate_tool)):
+                question = (asked.arguments or {}).get("question", "")
+                ctx.escalation = Escalation("model", question if isinstance(question, str) else "")
+                return
             messages.append(_assistant_message("".join(step_text), calls))
             for call in calls:
                 result = await self._execute(call, ctx)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
+        if self._escalate_tool:
+            ctx.escalation = Escalation("limit")
+            return
         yield ("\n\n" if wrote_text else "") + LIMIT_NOTICE
 
     async def _execute(self, call: ToolCall, ctx: ToolContext) -> str:
@@ -81,6 +102,20 @@ class Agent:
         except Exception:
             log.exception("Werkzeug %s ist abgestürzt", call.name)
             return "Fehler: Das Werkzeug ist intern fehlgeschlagen.", False
+
+
+def _find(calls: list[ToolCall], name: str) -> ToolCall | None:
+    return next((c for c in calls if c.name == name), None)
+
+
+def _with_context(messages: list[Message], context: str) -> list[Message]:
+    """Setzt den Kontext vor die letzte Nutzernachricht (die Liste wird nicht verändert)."""
+    out = list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        if out[i]["role"] == "user":
+            out[i] = {"role": "user", "content": f"[{context}]\n\n{out[i]['content']}"}
+            break
+    return out
 
 
 def _assistant_message(text: str, calls: list[ToolCall]) -> Message:

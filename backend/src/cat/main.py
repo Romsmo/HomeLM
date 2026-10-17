@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from cat import __version__, auth
-from cat.agent.responder import build_responder
+from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
+from cat.llm.base import LLMProvider
 from cat.llm.litellm_provider import LiteLLMProvider
 from cat.memory.sessions import summarize_old_sessions
 from cat.plugins.manager import PluginManager
@@ -27,13 +28,17 @@ def _start_summaries(state: AppState) -> "asyncio.Task[int] | None":
     settings = state.settings
     if not (settings.summarize_sessions and settings.session_log and settings.responder == "agent"):
         return None
-    provider = LiteLLMProvider(
-        settings.llm_model, settings.anthropic_api_key, settings.llm_max_tokens
-    )
-    if settings.anthropic_api_key is None and settings.llm_model.startswith(
-        ("anthropic/", "claude")
-    ):
-        return None
+    provider: LLMProvider
+    if settings.local_model:
+        provider = build_local_provider(state)  # lokal, ohne Internet; Claude sieht das nie
+    else:
+        provider = LiteLLMProvider(
+            settings.llm_model, settings.anthropic_api_key, settings.llm_max_tokens
+        )
+        if settings.anthropic_api_key is None and settings.llm_model.startswith(
+            ("anthropic/", "claude")
+        ):
+            return None
 
     async def run() -> int:
         try:

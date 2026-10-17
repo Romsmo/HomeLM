@@ -34,10 +34,33 @@ class Settings(BaseSettings):
     # LLM (Phase 2). Der Schlüssel steht nur in der .env auf dem Server.
     llm_model: str = "anthropic/claude-haiku-5-5"
     llm_max_tokens: int = 1500
-    # Offline-Fallback (Phase 9): leer = aus. Beispiel: ollama/qwen3:4b (braucht ca. 3 GB RAM,
-    # siehe docs/offline.md). Übernimmt nur, wenn der Cloud-Anbieter nicht erreichbar ist.
+    # Offline-Fallback (Phase 9, nur im Cloud-Modus): leer = aus. Beispiel: ollama_chat/qwen3:4b
+    # (siehe docs/offline.md). Übernimmt nur, wenn der Cloud-Anbieter nicht erreichbar ist.
     fallback_model: str = ""
     ollama_url: str = "http://ollama:11434"
+
+    # Lokal zuerst: Ist `local_model` gesetzt, beantwortet das Modell auf dem Server (Ollama)
+    # alles selbst. Claude kommt nur ins Spiel, wenn es etwas nicht kann (docs/claude.md).
+    # Leer = alter Cloud-Modus (`llm_model`). Beispiel: qwen3:4b-instruct-2507-q4_K_M
+    local_model: str = ""
+    local_num_ctx: int = 4096
+    # Rechenthreads für Ollama: so viele wie `cpus` des Ollama-Containers (sonst drosselt das
+    # CFS-Limit, gemessen: 2,4 statt 10 Token pro Sekunde bei 6 Threads auf 3 CPUs).
+    local_threads: int = 3
+    local_keep_alive: str = "10m"
+    # Wartezeit zwischen zwei Teilen der Antwort; die Verarbeitung eines langen Prompts auf der
+    # CPU braucht oft über eine Minute, bevor das erste Wort kommt.
+    local_timeout_s: float = 240.0
+    local_max_tokens: int = 700
+
+    # Claude über das Abo (Brücke-Container `claude-bridge`, docs/claude.md). Leer = aus.
+    claude_url: str = ""
+    claude_model: str = "sonnet"
+    claude_timeout_s: float = 240.0
+    # Obergrenze an Fragen an Claude pro Tag (Schutz für das Abo-Limit und die Privatsphäre).
+    claude_daily_limit: int = 25
+    # Darf Claude die Notizen des Gedächtnisses lesen (Second Brain, nur lesend)?
+    claude_memory: bool = True
     # Wartezeit auf den Cloud-Anbieter, wenn ein Fallback konfiguriert ist (schnell umschalten).
     llm_timeout_s: float = 20.0
     fallback_cooldown_s: float = 60.0

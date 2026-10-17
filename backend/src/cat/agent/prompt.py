@@ -33,6 +33,32 @@ Aktuelle Zeit: {now}
 """
 
 
+# Kompakter Prompt für das kleine lokale Modell. Er ist absichtlich kurz und enthält nichts
+# Veränderliches (keine Uhrzeit): Ollama behält die Verarbeitung eines gleichbleibenden
+# Anfangs im Speicher, bei ca. 30 Token/s auf der CPU spart das pro Antwort über eine Minute.
+LOCAL_PROMPT = """\
+Du bist Cat, der Heimassistent dieses Haushalts. Du läufst lokal auf dem Heimserver.
+Antworte auf Deutsch, kurz und natürlich, duze den Nutzer. Erfinde nichts. Sag offen, wenn du etwas nicht weißt.
+Smart Home: Geräte kennst du nur aus list_devices. Lies mit get_state, steuere mit set_state. Melde Erfolg erst, wenn das Werkzeug Erfolg meldet. Bei Türen und Schlössern fragt das System selbst nach Bestätigung.
+Gedächtnis: Nutze "Erinnerungen" nur, wenn sie zur Frage passen. memory_search sucht gezielt. memory_write nur bei "merk dir" oder klar dauerhaften Fakten, nie Passwörter.
+Stage: show_chart für Zahlen, show_markdown für Text und Tabellen. Rechnen: run_python.
+"""
+
+LOCAL_CLAUDE_PROMPT = """\
+Claude: Du bist ein kleines Modell. Rufe ask_claude auf (eine vollständig formulierte Frage), statt zu raten, wenn die Aufgabe schwierig ist oder du unsicher bist: Wissensfragen, aktuelle Fakten, Erklärungen mit Tiefgang, längere Texte, Programmieren, Grafiken und Animationen als HTML, Planen und Abwägen, lange Inhalte zusammenfassen. Einfache Fragen, Smart Home, Gedächtnis und Rechnen erledigst du selbst.
+"""
+
+
+def build_local_prompt(claude: bool) -> str:
+    return LOCAL_PROMPT + (LOCAL_CLAUDE_PROMPT if claude else "")
+
+
+def build_context(now: datetime | None = None) -> str:
+    """Veränderlicher Kontext für die lokale KI (kommt an die Nutzernachricht, nicht in den Prompt)."""
+    now = now or datetime.now().astimezone()
+    return f"Aktuelle Zeit: {now.strftime('%A, %d.%m.%Y, %H:%M Uhr')}"
+
+
 def build_system_prompt(now: datetime | None = None) -> str:
     now = now or datetime.now().astimezone()
     stamp = now.strftime("%A, %d.%m.%Y, %H:%M Uhr")

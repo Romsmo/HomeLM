@@ -48,7 +48,9 @@ class AppState:
             self.audit,
             self.confirm,
         )
-        self.provider_state = ProviderState(name=settings.llm_model, offline=False)
+        self.provider_state = ProviderState(
+            name=settings.local_model or settings.llm_model, offline=False
+        )
         self.memory = MemoryService(
             settings.memory_dir, settings.sessions_dir, settings.session_log
         )

@@ -3,13 +3,17 @@ import logging
 from collections.abc import AsyncIterator, Sequence
 
 from cat.agent.loop import Agent, to_llm_messages
-from cat.agent.prompt import build_system_prompt
+from cat.agent.prompt import build_local_prompt, build_system_prompt
+from cat.agent.router import ASK_CLAUDE, SPOKEN_HINT, RoutedResponder, build_ask_claude_tool
 from cat.agent.tools import Tool, ToolContext, ToolRegistry
+from cat.claude.bridge import ClaudeBridge
+from cat.claude.budget import ClaudeBudget
 from cat.devices.service import DeviceService
 from cat.devices.tools import build_device_tools
 from cat.llm.base import LLMError, LLMProvider
 from cat.llm.fallback import FallbackProvider
 from cat.llm.litellm_provider import LiteLLMProvider
+from cat.llm.ollama import OllamaProvider
 from cat.memory.service import MemoryService, build_memory_tools
 from cat.plugins.pending import PendingPlugins, build_pending_tools
 from cat.sandbox.client import SandboxClient
@@ -19,11 +23,6 @@ from cat.state import AppState
 from cat.ws.protocol import ChatMessage
 
 log = logging.getLogger("cat.agent")
-
-SPOKEN_HINT = (
-    "Diese Antwort wird laut vorgelesen: höchstens 1 bis 2 kurze Sätze, kein Markdown, keine "
-    "Aufzählungen, keine Sonderzeichen. Stelle bei Bedarf genau eine kurze Rückfrage."
-)
 
 
 class AgentResponder:
@@ -75,27 +74,83 @@ def build_registry(
     return registry
 
 
+# Was die kleine lokale KI NICHT bekommt: Sie soll kein HTML schreiben oder Plugins entwerfen,
+# das ist Sache von Claude (und spart ca. 400 Prompt-Token, die auf der CPU Sekunden kosten).
+LOCAL_EXCLUDED_TOOLS = ("show_html", "propose_plugin")
+
+
+def build_local_provider(state: AppState) -> OllamaProvider:
+    s = state.settings
+    return OllamaProvider(
+        s.local_model,
+        s.ollama_url,
+        num_ctx=s.local_num_ctx,
+        num_thread=s.local_threads,
+        keep_alive=s.local_keep_alive,
+        timeout_s=s.local_timeout_s,
+        max_tokens=s.local_max_tokens,
+    )
+
+
+def build_claude(state: AppState) -> tuple[ClaudeBridge, ClaudeBudget] | None:
+    s = state.settings
+    if not s.claude_url:
+        return None
+    bridge = ClaudeBridge(s.claude_url, s.claude_model, s.claude_timeout_s, s.claude_memory)
+    return bridge, ClaudeBudget(s.data_dir / "claude-usage.json", s.claude_daily_limit)
+
+
 def build_responder(
     state: AppState,
     provider: LLMProvider | None = None,
     extra_tools: Sequence[Tool] = (),
-) -> AgentResponder:
+    claude: tuple[ClaudeBridge, ClaudeBudget] | None = None,
+) -> AgentResponder | RoutedResponder:
     settings = state.settings
+    registry = build_registry(
+        extra_tools,
+        devices=state.devices,
+        memory=state.memory,
+        sandbox=state.sandbox if settings.sandbox else None,
+        pending=state.pending_plugins,
+    )
+    if settings.local_model:
+        return _build_routed(state, registry, provider, claude or build_claude(state))
     provider = provider or _build_provider(state)
     agent = Agent(
         provider=provider,
-        registry=build_registry(
-            extra_tools,
-            devices=state.devices,
-            memory=state.memory,
-            sandbox=state.sandbox if settings.sandbox else None,
-            pending=state.pending_plugins,
-        ),
+        registry=registry,
         system_prompt=build_system_prompt,
         max_steps=settings.agent_max_steps,
         audit=state.audit,
     )
     return AgentResponder(state, agent)
+
+
+def _build_routed(
+    state: AppState,
+    registry: ToolRegistry,
+    provider: LLMProvider | None,
+    claude: tuple[ClaudeBridge, ClaudeBudget] | None,
+) -> RoutedResponder:
+    settings = state.settings
+    local_registry = registry.only(
+        name for name in registry.names() if name not in LOCAL_EXCLUDED_TOOLS
+    )
+    if claude:
+        local_registry.register(build_ask_claude_tool())
+    agent = Agent(
+        provider=provider or build_local_provider(state),
+        registry=local_registry,
+        system_prompt=lambda: build_local_prompt(claude is not None),
+        # Jeder Schritt kostet auf der CPU Sekunden: lieber früh an Claude übergeben.
+        max_steps=min(settings.agent_max_steps, 4),
+        audit=state.audit,
+        escalate_tool=ASK_CLAUDE if claude else None,
+        extra_in_user=True,
+    )
+    bridge, budget = claude if claude else (None, None)
+    return RoutedResponder(state, agent, settings.local_model, bridge, budget)
 
 
 def _build_provider(state: AppState) -> LLMProvider:

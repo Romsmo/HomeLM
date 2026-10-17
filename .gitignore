@@ -9,3 +9,4 @@ dist/
 *.pyc
 .local/
 docker-compose.override.yml
+claude.env
