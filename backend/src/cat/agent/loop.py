@@ -1,5 +1,7 @@
+import ast
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 
@@ -107,6 +109,11 @@ class Agent:
                 yield event.text
 
             model_s = time.perf_counter() - model_started
+            if not calls and (typed := _typed_call("".join(step_text), self._registry)):
+                # Aufruf als Text geschrieben ("get_state(device=...)"): trotzdem ausführen.
+                calls.append(typed)
+                step_text.clear()
+                held.clear()
             if held:
                 joined = "".join(held)
                 if (ctx.device_related or claims_action(joined)) and not calls:
@@ -188,6 +195,23 @@ class Agent:
         except Exception:
             log.exception("Werkzeug %s ist abgestürzt", call.name)
             return "Fehler: Das Werkzeug ist intern fehlgeschlagen.", False
+
+
+_CALL_TEXT = re.compile(r"^\s*(\w+)\((.*)\)\s*$", re.DOTALL)
+
+
+def _typed_call(text: str, registry: ToolRegistry) -> ToolCall | None:
+    """Kleine Modelle schreiben Aufrufe manchmal als Text, statt sie auszulösen."""
+    match = _CALL_TEXT.match(text)
+    if match is None or registry.get(match.group(1)) is None:
+        return None
+    try:
+        call = ast.parse(f"f({match.group(2)})", mode="eval").body
+        assert isinstance(call, ast.Call) and not call.args
+        args = {k.arg: ast.literal_eval(k.value) for k in call.keywords if k.arg}
+    except (SyntaxError, ValueError, AssertionError):
+        return None
+    return ToolCall("text-call", match.group(1), args)
 
 
 def _last_user_text(history: list[Message]) -> str:

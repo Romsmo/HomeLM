@@ -184,6 +184,26 @@ def test_mentions_device_uses_words_from_the_house(tmp_path: Path) -> None:
     assert not service.mentions_device("Wie wird das Wetter morgen?")
 
 
+async def test_a_call_written_as_text_is_executed(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    provider = FakeProvider([TextDelta('get_state(device="Deckenlicht Roman")')])
+    out, ctx = await run(agent_for(service, provider), "Ist das Deckenlicht an?", True)
+    assert out == "Deckenlicht Roman ist aus." and ctx.trace[0].tool == "get_state"
+
+
+async def test_a_command_answered_with_get_state_is_not_learned_as_a_question(
+    tmp_path: Path,
+) -> None:
+    service, _ = make(tmp_path)
+    learner = Learner(tmp_path / "learned.json", service, learn_after=1)
+    from cat.agent.tools import ToolTrace
+
+    wrong = [ToolTrace("get_state", {"device": "Deckenlicht Roman"}, True, "")]
+    assert learner.observe("Mach das Deckenlicht von Roman an", wrong) is None
+    assert learner.listing() == []
+    assert learner.observe("Ist das Deckenlicht Roman an", wrong) is not None
+
+
 # --- Kleiner Prompt für das lokale Modell ---
 
 
