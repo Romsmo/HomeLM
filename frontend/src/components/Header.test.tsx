@@ -25,6 +25,13 @@ describe("Header: antwortendes Modell", () => {
     expect(badge.className).toContain("amber");
   });
 
+  it("zeigt, wenn Claude statt des lokalen Modells antwortet", () => {
+    render(
+      <Header connection="open" weather={undefined} provider={{ name: "claude/sonnet", offline: false }} onLogout={() => {}} />,
+    );
+    expect(screen.getByTestId("provider-badge")).toHaveTextContent("Claude antwortet: sonnet");
+  });
+
   it("zeigt nichts, solange der Server noch kein Modell gemeldet hat", () => {
     render(<Header connection="open" weather={undefined} provider={null} onLogout={() => {}} />);
     expect(screen.queryByTestId("provider-badge")).not.toBeInTheDocument();

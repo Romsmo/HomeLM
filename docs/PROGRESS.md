@@ -262,3 +262,42 @@
 - Der Test-Satellit wurde danach wieder aus `satellites.yaml` entfernt; ein anderes Token wird vom Server abgewiesen.
 
 **Endzustand Server:** Container `homelm-backend` (ca. 950 MiB) und `homelm-sandbox` (ca. 4 MiB), die zwölf übrigen Container unverändert (Up 3 bis 6 Tage). RAM verfügbar ca. 3,9 GB, Swap 690 MB, Last 0,6, Platte 41 % (128 GB frei, Cat-Daten 666 MB, Docker-Images 7 GB gesamt).
+
+
+## Phase 10: Lokal zuerst, Claude nur für den Rest (2026-10-17)
+
+Auftrag des Nutzers (ausdrücklich): Claude über das Abo einbinden (keinen API-Schlüssel kaufen), das lokale Modell aktivieren und testen, das lokale Modell hat Priorität 1, Claude nur für das, was es nicht kann, Second Brain einrichten (falls noch nicht) und Claude lesenden Zugriff geben. Diese Anweisung ersetzt meine frühere Empfehlung gegen den Abo-Weg. Grundlage sind Hilfecenter und CLI-Doku (Stand 07.10.2026: `claude -p` zählt gegen das Abo-Limit, nur persönlicher Gebrauch, kein Auslesen von Anmeldedaten).
+
+**Gebaut**
+- `llm/ollama.py`: eigener Client für Ollamas native API (`/api/chat`): `think:false`, `num_ctx`, `num_thread`, `keep_alive`, Werkzeugaufrufe mit Argumenten als Objekt, ThinkFilter, Fehler als `LLMError(unavailable)`. Bewusst ohne LiteLLM (Optionen je Anfrage, weniger Abhängigkeiten im Pfad).
+- `agent/router.py` (`RoutedResponder`), `agent/prompt.py` (kompakter lokaler Prompt, Kontext vor der Nutzernachricht), `agent/loop.py` (`escalate_tool`, `extra_in_user`), `agent/tools.py` (`Escalation`, `ToolRegistry.only`): lokal zuerst; Weitergabe an Claude bei `ask_claude`, ausdrücklicher Bitte, Ausfall, zu vielen Schritten oder leerer Antwort. Der Fast-Path läuft davor und fragt nie Claude.
+- `claude/` (`bridge.py`, `budget.py`, `text.py`): Brücken-Client, Tageslimit (`data/claude-usage.json`) mit Pausen nach Limit- oder Anmeldefehler, Prompt-Bau (Gespräch plus Gedächtnis-Treffer), ```html-Blöcke gehen auf die Stage, Fußzeile "Antwort von Claude".
+- `claude-bridge/` (Node, ohne Abhängigkeiten) und Compose-Dienst `claude-bridge` (Profil `claude`): Claude-Code-CLI 2.1.302 festgenagelt, `--restricted`, nur `Read/Grep/Glob` auf das schreibgeschützt eingehängte Gedächtnis, `dontAsk`, ohne MCP und Sitzungsspeicher, ein API-Schlüssel wird nie weitergereicht, Token nur in `claude.env`. Container: read_only, cap_drop ALL, 768 MB, 1 CPU, kein veröffentlichter Port.
+- Anzeige: Kopf zeigt "Claude antwortet: sonnet" während einer Weitergabe; Audit-Eintrag `claude_escalation` je Frage.
+- `scripts/local_eval.py` (Prüfung mit echten Fragen auf einer Datenkopie), Doku `docs/claude.md`, `docs/offline.md` neu (Messwerte, Korrektur `ollama_chat/` und Modellwahl), `CLAUDE.md` angepasst.
+
+**Second Brain:** war bereits eingerichtet (Phase 8, `docs/memory.md`). Neu: lesender Zugriff für Claude auf zwei Wegen (Treffer im Prompt plus schreibgeschützter Ordner in der Brücke). Schreiben bleibt beim lokalen Agenten.
+
+**Messung lokales Modell (Server, 2026-10-17)** (Tabelle in `docs/offline.md`)
+- `qwen3:4b` (der aktuelle Tag ist das Thinking-Modell) war unbrauchbar: 440 s für "Hallo, wer bist du?", `think:false` wird ignoriert. `qwen3:4b-instruct-2507-q4_K_M`: 10 Token/s, einfache Frage 4 bis 5 s, mit Werkzeug 30 bis 50 s, Kaltstart bis 75 s.
+- 6 Threads auf `cpus: 3` drosselten auf 2,4 Token/s; mit 3 Threads sind es 10 Token/s.
+- RAM: Ollama 3,06 GiB, danach ca. 1,2 GB verfügbar, kein Speicherdruck (PSI 0), kein Swap-Verkehr, Nextcloud `status.php` unverändert 15 ms. Knapp: das RAM-Upgrade bleibt die wichtigste Verbesserung.
+- Qualität (7 Testfragen): Rechnen, Geräteliste und Gedächtnis schreiben/lesen korrekt. Gedicht und lange Geschichte mäßig (Deutsch im Detail schwach), "animierte Uhr" ohne Claude nicht lösbar: genau die Fälle für Claude. Gefundene Schwäche: Antwort in der Ich-Form statt "du" (Prompt nachgebessert, nicht erneut gemessen).
+
+**Abnahme**
+- **Bestanden:** Backend 396 Tests (davon 45 neu: Ollama-Client, Router, Claude-Texthilfen, Budget, Brücken-Client), Frontend 91, Brücke 15 (Node, mit Attrappe der CLI). Lokales Modell auf dem Server mit echten Fragen (s. o.). Brücken-Container läuft; die echte CLI nimmt alle Flags an und meldet ohne Token sauber `auth`; das Gedächtnis ist dort schreibgeschützt.
+- **Nicht abgenommen:** ein echter Aufruf an Claude. Dafür fehlt das Token des Nutzers (`claude setup-token`, Schritte in `docs/claude.md`). Ob die Flagkombination mit echtem Token wie erwartet antwortet (insbesondere `--restricted` zusammen mit OAuth-Token und `Read/Grep/Glob`), ist **ungeprüft**; bei Problemen ist `CLAUDE_RESTRICTED=0` der erste Schalter.
+- openHAB-Verbindung vom Container: seit der ufw-Regel des Nutzers in Ordnung (REST 496 Items, SSE-Strom läuft). Der Wetter-Abruf lieferte einmal 503 von Open-Meteo (vorübergehend).
+
+**Entscheidungen**
+- Modell `qwen3:4b-instruct-2507-q4_K_M`, Kontext 4096, 3 Threads, `keep_alive` 10 min (Kompromiss zwischen Wartezeit und RAM).
+- Kleine Werkzeugauswahl für das lokale Modell (ohne `show_html`, `propose_plugin`): spart Prompt-Token, die auf der CPU Sekunden kosten; solche Aufgaben gehen an Claude.
+- Die Antwort von Claude wird als Ganzes geholt und im Chat in Stücken gezeigt (kein Live-Strom), weil Zwischentexte bei Werkzeugschritten sonst im Chat landen würden.
+
+**Offene Punkte (brauchen den Nutzer)**
+1. `claude setup-token` ausführen, Token in `/srv/homelm/claude.env` eintragen, `CAT_CLAUDE_URL=http://claude-bridge:8099` in `.env`, Brücke und Cat neu starten (`docs/claude.md`, Abschnitt "Einrichten").
+2. Entscheidung, ob die Notizen für Claude lesbar sein sollen (`CAT_CLAUDE_MEMORY`, Standard an).
+3. RAM-Upgrade; Allowlist-Auswahl, Test-Lampe, Modus `test`/`full` (Phase 4); HTTPS für das Browser-Mikrofon; Raspberry Pi.
+
+**Rollback**
+- Lokal zuerst aus: `CAT_LOCAL_MODEL` in `.env` leeren, `docker compose up -d --no-build backend` (alter Cloud-Modus). Claude aus: `CAT_CLAUDE_URL` leeren und `docker compose --profile claude stop claude-bridge`. Ollama stoppen: `docker compose --profile offline stop ollama`. Die Modelle liegen in `data/ollama` (eigener Ordner). Code: Stand vor Phase 10 ist Commit `840b15e`.

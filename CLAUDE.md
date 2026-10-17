@@ -6,7 +6,7 @@ Bei Widersprüchen gilt diese Datei vor `cat-plan.md` und `phase-prompts.md`. Ab
 
 - **openHAB zuerst.** Home Assistant läuft laut Nutzer (Stand) nicht auf dem Server. Das HA-Plugin wird gegen Mocks gebaut und erst aktiviert, wenn der Nutzer bestätigt, dass HA existiert.
 - **Deployment** nach `/srv/homelm` als eigener Compose-Stack, nicht in die bestehenden Stacks hinein (siehe unten).
-- LLM per Cloud-API (Claude Haiku, aktuellen Modellnamen in der Anthropic-Doku prüfen), optional Ollama als Offline-Fallback.
+- **Lokal zuerst** (ausdrückliche Anweisung des Nutzers, 2026-10-17): Das lokale Modell (Ollama, `qwen3:4b-instruct-2507-q4_K_M`) ist Priorität 1 und beantwortet alles, was es kann. **Claude wird nur für das gefragt, was das lokale Modell nicht kann**, und zwar über das Claude-Abo des Nutzers (Claude Code CLI in einem eigenen Container, kein bezahlter API-Schlüssel). Details und Grenzen: `docs/claude.md`. Der frühere Plan (Cloud-API primär, Ollama als Fallback) gilt nur noch, wenn `CAT_LOCAL_MODEL` leer ist.
 
 ## 1. Arbeitsmodus: autonom, mit gezielten Rückfragen
 
@@ -52,7 +52,7 @@ Diese Dinge gehören dem Nutzer und anderen Projekten. Du berührst sie nicht, a
 - Firewall, nftables (`ohtunnel` und alle anderen Tabellen), `wlan0`, Netzwerkkonfiguration, SSH-Konfiguration, sudoers, Benutzer und Gruppen.
 - Löschbefehle auf dem Server: `rm -rf`, `docker system prune`, `docker volume rm/prune`, `docker compose down -v`, `docker rm` fremder Container, `git push --force`, `git reset --hard` auf nicht eigenem Stand.
 - Neustart des Servers, Neustart fremder Container, Paketupdates des Systems (`apt upgrade`).
-- Alles, was Daten aus dem Haus an neue Ziele sendet (neue Cloud-Dienste, Telemetrie).
+- Alles, was Daten aus dem Haus an neue Ziele sendet (neue Cloud-Dienste, Telemetrie). Ausnahme mit ausdrücklicher Freigabe des Nutzers: Fragen an Claude über das Abo (Chatverlauf der Frage und Gedächtnis-Notizen, lesend), begrenzt durch Tageslimit und Audit-Log, siehe `docs/claude.md`.
 
 **Erlaubt ohne Rückfrage:**
 
@@ -89,7 +89,7 @@ Auf dem Server laufen Postgres/PostGIS mit Millionen Datensätzen, Nextcloud, Ma
 - Backend: Python 3.12, FastAPI, asyncio, Pydantic v2, `uv`, `pytest`, `ruff`.
 - Frontend: Vite, React, TypeScript (strict), Tailwind, `vitest`.
 - Voice: faster-whisper (STT), Piper (TTS), Silero VAD, openWakeWord (Satellit).
-- LLM: LiteLLM hinter eigener Schnittstelle in `backend/src/cat/llm/`.
+- LLM: eigene Schnittstelle in `backend/src/cat/llm/` mit `OllamaProvider` (lokal, native API) und `LiteLLMProvider` (alter Cloud-Modus); Claude über `backend/src/cat/claude/` und den Container `claude-bridge/`.
 - Daten: SQLite und Markdown in `data/` (gitignored, auf dem Server in `/srv/homelm/data`).
 - Deployment: Docker Compose in `/srv/homelm`.
 

@@ -10,6 +10,12 @@ const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
 };
 
 /** "anthropic/claude-haiku-5-5" -> "claude-haiku-5-5" */
+function providerLabel(provider: { name: string; offline: boolean }): string {
+  if (provider.offline) return "Offline-Modell";
+  // Während einer Weitergabe an Claude zeigt der Hinweis, wer gerade antwortet.
+  return provider.name.startsWith("claude/") ? "Claude antwortet" : "Modell";
+}
+
 export function shortModel(name: string): string {
   return name.includes("/") ? name.slice(name.indexOf("/") + 1) : name;
 }
@@ -54,7 +60,7 @@ export default function Header({
                 : "border-slate-700 text-slate-400"
             }`}
           >
-            {provider.offline ? "Offline-Modell" : "Modell"}: {shortModel(provider.name)}
+            {providerLabel(provider)}: {shortModel(provider.name)}
           </span>
         )}
       </div>

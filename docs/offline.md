@@ -1,38 +1,59 @@
-# Offline-Betrieb und Fallback-Modell
+# Offline-Betrieb und lokales Modell
+
+Seit dem Umbau "lokal zuerst" (`docs/claude.md`) ist das lokale Modell auf dem Server die **erste Wahl** und nicht mehr nur ein Notnagel. Diese Seite beschreibt, was ohne Internet geht, was das Modell kostet und wie man es betreibt.
 
 ## Was ohne Internet immer funktioniert
 
 - **Fast-Path** (`docs/intents.md`): Licht, Rollläden, Heizung, Temperatur und Zustände über openHAB im LAN, ohne LLM.
+- **Das lokale Modell** (Ollama): freie Fragen, Gerätesteuerung per Werkzeug, Gedächtnis, Rechnen, einfache Stage-Inhalte.
 - Dashboard, Widgets (Wetter zeigt dann einen Hinweis), Gedächtnis (Notizen und Suche), Geräte-Panel, Audit-Log.
 
-Alles andere (freie Fragen, Grafiken, Gespräche) braucht das Cloud-Modell **oder** das lokale Fallback-Modell.
+Nur Claude (schwere Fragen, HTML-Grafiken, lange Texte) braucht das Internet.
 
-## Wie der Fallback arbeitet
+## Modell und Messwerte
 
-Ist `CAT_FALLBACK_MODEL` gesetzt (z. B. `ollama/qwen3:4b`), versucht Cat zuerst das Cloud-Modell (Wartezeit `CAT_LLM_TIMEOUT_S`, Standard 20 s). Ist es **nicht erreichbar** (Internet weg, Ausfall, Limit), antwortet das lokale Modell, und der Kopf der Oberfläche zeigt in Gelb **"Offline-Modell: qwen3:4b"**. Danach geht es 60 Sekunden direkt zum lokalen Modell (kein Warten pro Nachricht), dann wird die Cloud wieder versucht und die Anzeige springt zurück.
+Gemessen am 17.10.2026 auf dem Heimserver (i5-8500T, 6 Kerne, Ollama-Container mit `cpus: 3`, Modell `qwen3:4b-instruct-2507-q4_K_M`, Kontext 4096, 3 Threads, übrige Dienste laufen):
 
-Nicht umgeschaltet wird bei Konfigurationsfehlern (falscher API-Schlüssel, falscher Modellname): Die erreichen Sie als Meldung. Mitten in einer Antwort wird nie gewechselt.
+| | Messwert |
+|---|---|
+| Ausgabe | ca. 10 Token pro Sekunde (kurz), ca. 7 bei langem Kontext |
+| Verarbeiten des Prompts | ca. 30 Token pro Sekunde (neuer Text), bereits bekannter Anfang ist sofort da |
+| Kaltstart (Modell laden + Prompt) | 6 s Laden, der erste Prompt mit Werkzeugen bis zu 75 s |
+| Einfache Frage ("Wie viele Minuten hat eine Stunde?") | 4 bis 5 s |
+| Frage mit Werkzeug (z. B. Geräteliste) | 17 s bis zum ersten Wort, 30 bis 50 s gesamt |
+| Gedächtnis schreiben / lesen | 27 s / 11 s |
+| Lange Geschichte (20 Sätze) | ca. 2 Minuten |
+| RAM | Ollama 3,06 GiB (Limit 3,5 GiB), Server danach ca. 1,2 GB verfügbar, kein Speicherdruck (PSI 0), kein Swap-Verkehr während der Antwort |
+| Nextcloud (`status.php`) während einer Antwort | 15 ms wie im Leerlauf |
 
-Das Fallback-Modell ist deutlich schwächer (kleines Modell auf der CPU, grob 4 bis 8 Wörter pro Sekunde, Werkzeugaufrufe weniger zuverlässig). Es ist ein Notnagel, kein Ersatz.
+**Wichtig, was die Messung ergeben hat:**
 
-## RAM-Bedarf und Entscheidung für diesen Server
+1. **`ollama_chat/qwen3:4b` ist ungeeignet.** Der Tag `qwen3:4b` ist inzwischen das "Thinking"-Modell: Es schreibt hunderte Token lang laut nach, bevor es antwortet (`think:false` und `/no_think` werden ignoriert; 440 s für "Hallo, wer bist du?"). Genommen wird deshalb `qwen3:4b-instruct-2507-q4_K_M` (gleiche Größe, ohne Denkphase, gutes Deutsch, zuverlässige Werkzeugaufrufe).
+2. **Threads müssen zu `cpus` passen.** Mit 6 Threads auf einem Container mit 3 CPUs drosselt das CFS-Limit, und die Ausgabe fiel auf 2,4 Token/s. Mit 3 Threads sind es 10. Darum `CAT_LOCAL_THREADS=3` passend zu `cpus: 3.0`.
+3. **Der Prompt muss klein und gleichbleibend sein.** Ollama behält die Verarbeitung eines gleichen Anfangs. Cat schickt dem lokalen Modell darum einen kompakten Systemprompt (ca. 400 Token) mit einer kleinen Werkzeugauswahl, und alles Veränderliche (Uhrzeit, Erinnerungen) hängt vor der Nutzernachricht statt im Systemprompt. Der große Prompt der Cloud-Variante (ca. 3000 Token mit allen Werkzeugen) hätte auf der CPU über 100 s gedauert.
+4. **Das Modell bleibt `CAT_LOCAL_KEEP_ALIVE` (10 min) im RAM** und wird danach entladen. In dieser Zeit hat der Server nur noch rund 1,2 GB frei. Das ging in der Messung ohne spürbare Folgen, ist aber knapp: ein **RAM-Upgrade auf 16 GB** wäre die wichtigste Verbesserung.
 
-Qwen3 4B (Q4_K_M) belegt geladen etwa **2,6 GB Gewicht plus Kontext, zusammen rund 3 bis 3,5 GB**. Der Ollama-Container ist deshalb auf 3,5 GB begrenzt und entlädt das Modell nach 2 Minuten Leerlauf (`OLLAMA_KEEP_ALIVE`).
+Sprache: Befehle laufen über den Fast-Path (Antwort in unter 1 s). Freie gesprochene Fragen brauchen Erkennung (gemessen ca. 2,5 s mit `small`) plus Antwort des Modells (gemessen 4 bis 50 s je nach Werkzeug): brauchbar, aber nicht flüssig. Eine Messung über den ganzen Sprachweg mit dem lokalen Modell steht noch aus.
 
-Der Server hat **7,5 GB RAM**, davon laufen bereits openHAB (1,1 GB), PostgreSQL (1,7 GB), Nextcloud, MariaDB und weitere Dienste; verfügbar sind rund 5 GB (zum Teil Cache der Datenbanken), und es wird schon ausgelagert. Ein zusätzlich geladenes 3-GB-Modell würde Nextcloud und Trafficnetwork spürbar bremsen. **Darum ist der Fallback hier vorerst nicht aktiv** (Container hinter dem Compose-Profil `offline`, `CAT_FALLBACK_MODEL` leer). Mit einem RAM-Upgrade auf 16 GB ist er unproblematisch.
-
-## Aktivieren (nach Upgrade oder bewusst auf eigenes Risiko)
+## Aktivieren, Betrieb, Deaktivieren
 
 ```bash
 cd /srv/homelm
-# 1. in .env eintragen:  CAT_FALLBACK_MODEL=ollama/qwen3:4b
+# in .env:  CAT_LOCAL_MODEL=qwen3:4b-instruct-2507-q4_K_M   (plus CAT_LOCAL_THREADS=3)
 docker compose --profile offline up -d ollama
-docker compose exec ollama ollama pull qwen3:4b     # lädt ca. 2,5 GB von registry.ollama.ai
-docker compose up -d --no-build                      # Cat mit Fallback neu starten
+docker compose exec ollama ollama pull qwen3:4b-instruct-2507-q4_K_M   # ca. 2,5 GB von registry.ollama.ai
+docker compose up -d --no-build                                          # Cat neu starten
 ```
 
-Das Herunterladen des Modells ist ein Zugriff auf einen neuen Server (Ollama-Registry). Es gehen keine Hausdaten dorthin. Deaktivieren: `CAT_FALLBACK_MODEL` leeren, `docker compose --profile offline stop ollama`.
+Das Herunterladen des Modells ist ein Zugriff auf einen neuen Server (Ollama-Registry). Es gehen keine Hausdaten dorthin. Deaktivieren: `CAT_LOCAL_MODEL` leeren (dann gilt wieder der alte Cloud-Modus), `docker compose --profile offline stop ollama`.
 
-## Testen
+Prüfen mit echten Fragen (arbeitet auf einer Kopie von Konfiguration und Gedächtnis):
 
-Internet trennen (oder in der `.env` einen falschen `ANTHROPIC_BASE_URL`-Weg nutzen) und eine freie Frage stellen: Der Kopf zeigt "Offline-Modell", ein Gerätebefehl ("Mach das Licht in der Küche an") läuft unabhängig davon über den Fast-Path.
+```bash
+docker compose exec -T backend python - < scripts/local_eval.py
+docker compose exec -T backend python - "Wie spät ist es?" < scripts/local_eval.py
+```
+
+## Alter Cloud-Modus mit Offline-Fallback (nur ohne `CAT_LOCAL_MODEL`)
+
+Ist `CAT_LOCAL_MODEL` leer und `CAT_FALLBACK_MODEL` gesetzt (z. B. `ollama_chat/qwen3:4b-instruct-2507-q4_K_M`, **nicht** `ollama/...` und nicht `qwen3:4b`), versucht Cat zuerst das Cloud-Modell (Wartezeit `CAT_LLM_TIMEOUT_S`, Standard 20 s). Ist es **nicht erreichbar** (Internet weg, Ausfall, Limit), antwortet das lokale Modell, und der Kopf zeigt in Gelb **"Offline-Modell"**. Danach geht es 60 Sekunden direkt zum lokalen Modell, dann wird die Cloud wieder versucht. Nicht umgeschaltet wird bei Konfigurationsfehlern (falscher Schlüssel oder Modellname) und nie mitten in einer Antwort. Dieser Modus braucht einen bezahlten API-Schlüssel und ist für diese Installation nicht vorgesehen.
