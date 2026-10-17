@@ -30,7 +30,17 @@ Schickt die Datei (oder einen erst synthetisierten Satz) durch VAD, Whisper, Dia
 
 ## Modellwahl und Messwerte
 
-Siehe `docs/PROGRESS.md`, Phase 6 (Messung auf dem Server). Faustregel: `base` ist schneller, `small` erkennt Umlaute und Namen besser, braucht aber etwa dreimal so viel Rechenzeit und RAM.
+Gemessen auf dem Heimserver (i5-8500T, 6 Kerne, Rechenthreads mit `nice 10`, 3 Threads, übrige Dienste laufen), mit vier von Piper gesprochenen Beispielsätzen:
+
+| | `base` | `small` (Standard) |
+|---|---|---|
+| Erkennungszeit je Satz (ca. 2 s Audio) | 1,2 bis 1,6 s | 2,4 bis 2,6 s |
+| Zeit bis zum ersten Ton der Antwort, ab Sprachende | 1,5 bis 1,9 s | 2,8 bis 2,9 s |
+| Erkennung | 1 von 4 wortgetreu, 1 weiterer fast richtig, 2 falsch ("Wie waren es das draußen?") | 3 von 4 wortgetreu |
+| RAM von Cat dauerhaft | ca. 430 MiB | ca. 950 bis 970 MiB |
+| Modelldateien | 142 MB | 605 MB |
+
+**Entscheidung: `small`.** Ein falsch verstandenes Wort führt zu einem Fehlbefehl oder zur Rückfrage, das kostet mehr als 1,3 Sekunden. Der Preis sind rund 530 MiB mehr RAM (der Server hat danach noch ca. 3,9 GB verfügbar, der Swap blieb bei 700 MB) und eine längere Wartezeit: Pause bis zum Sprachende (1,5 s) plus Erkennung plus Antwort ergibt ungefähr 4 Sekunden bis zur gesprochenen Antwort, mit `base` ungefähr 3 Sekunden. Stellschrauben: `CAT_VAD_SILENCE_S` (kürzere Pause, z. B. 1,0), `CAT_STT_THREADS`/`cpus`, oder `CAT_STT_MODEL=base`. Mit mehr RAM und CPU-Kernen für Cat wird `small` schneller. Echte Sprecher und Raumgeräusche sind schwieriger als die künstliche Stimme der Messung: `small` hat dafür den größeren Sicherheitsabstand.
 
 ## Datenschutz
 

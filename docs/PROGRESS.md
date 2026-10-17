@@ -219,7 +219,7 @@
 **Rollback**
 - Phase 4 bis 9 zurücknehmen: ältere Image-Stände gibt es nicht als Tag; Rollback = Repo auf einen früheren Commit zurücksetzen (z. B. `06ae227` = Phase 0-3), neu kopieren und `docker compose build && docker compose up -d --no-build`. Cat stoppen: `cd /srv/homelm && docker compose down` (ohne `-v`), das beendet beide Container und berührt nichts anderes.
 
-## Phase 6: Sprachpipeline auf dem Server (Stand: lokal gebaut und getestet, Messung auf dem Server folgt unten)
+## Phase 6: Sprachpipeline
 
 **Gebaut**
 - `backend/src/cat/voice/`: `vad.py` (Silero-VAD v6 als ONNX direkt mit onnxruntime, ohne torch; Segmentierung mit Hysterese, Vorlauf, Mindestlänge, einstellbarer Pause, Zeitlimit), `stt.py` (faster-whisper, int8, eigener Thread mit `nice`, Warmlauf, Filter gegen erfundene Standardsätze), `tts.py` (Piper, deutsche Stimme, satzweise), `sentences.py` (Satzteiler für den Strom des LLM), `pipeline.py` (`VoiceEngine`, `VoiceSession`: Halbduplex, STT -> Dialog -> TTS, Latenzmessung je Stufe), `setup.py` (Modelle laden, Hinweistext mit Raum- und Gerätenamen).
@@ -253,3 +253,12 @@
 
 **Offene Punkte**
 - Raspberry Pi, USB-Konferenzlautsprecher, `docs/satellite.md` durchgehen; "Hey Cat" trainieren (`docs/wakeword.md`).
+
+**Messung und Abnahme auf dem Server (2026-10-17)**
+- Modelle werden beim ersten Start automatisch geladen (Whisper von huggingface.co, Stimme von huggingface.co/rhasspy/piper-voices; reine Downloads, 666 MB in `data/models` bei `small`). Bereit nach 5 s (Modelle vorhanden) bzw. 21 s (mit Download).
+- **STT-Wahl nach Messung:** `small` (siehe Tabelle in `docs/voice.md`): 2,4 bis 2,6 s Erkennung, 3 von 4 Testsätzen wortgetreu; `base` 1,2 bis 1,6 s, aber 2 von 4 falsch. Preis: ca. 950 MiB RAM für Cat statt 430 MiB.
+- **Gesprochene Frage rein, gesprochene Antwort raus: bestanden.** Erst mit `scripts/voice_roundtrip.py` im Container, dann mit dem **echten Satelliten-Code von diesem PC über das LAN zum Server** (Token, Wake-Word simuliert, Frage von Piper gesprochen, Whisper small erkennt "Wie warm ist es draußen?", Fast-Path, Piper-Antwort mit 2,4 s Audio zurück). Latenz dieses Laufs ab Ende der Äußerung: Erkennung 1,9 s, erstes Audio 4,1 s (davon 2 s Warten auf das nicht erreichbare openHAB), dazu 1,5 s Pause bis zum Sprachende.
+- Die Antwort lautete "Außentemperatur ist gerade nicht erreichbar.", weil die ufw-Regel für den Weg zu openHAB noch aussteht (Fehler wird sauber gesprochen statt zu hängen; Verbindungsversuch gibt nach 2 s auf).
+- Der Test-Satellit wurde danach wieder aus `satellites.yaml` entfernt; ein anderes Token wird vom Server abgewiesen.
+
+**Endzustand Server:** Container `homelm-backend` (ca. 950 MiB) und `homelm-sandbox` (ca. 4 MiB), die zwölf übrigen Container unverändert (Up 3 bis 6 Tage). RAM verfügbar ca. 3,9 GB, Swap 690 MB, Last 0,6, Platte 41 % (128 GB frei, Cat-Daten 666 MB, Docker-Images 7 GB gesamt).
