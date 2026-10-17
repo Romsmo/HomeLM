@@ -283,7 +283,7 @@ Auftrag des Nutzers (ausdrücklich): Claude über das Abo einbinden (keinen API-
 **Messung lokales Modell (Server, 2026-10-17)** (Tabelle in `docs/offline.md`)
 - `qwen3:4b` (der aktuelle Tag ist das Thinking-Modell) war unbrauchbar: 440 s für "Hallo, wer bist du?", `think:false` wird ignoriert. `qwen3:4b-instruct-2507-q4_K_M`: 10 Token/s, einfache Frage 4 bis 5 s, mit Werkzeug 30 bis 50 s, Kaltstart bis 75 s.
 - 6 Threads auf `cpus: 3` drosselten auf 2,4 Token/s; mit 3 Threads sind es 10 Token/s.
-- RAM: Ollama 3,06 GiB, danach ca. 1,2 GB verfügbar, kein Speicherdruck (PSI 0), kein Swap-Verkehr, Nextcloud `status.php` unverändert 15 ms. Knapp: das RAM-Upgrade bleibt die wichtigste Verbesserung.
+- RAM: Ollama 3,06 GiB, danach ca. 1,2 GB verfügbar, kein Speicherdruck (PSI 0), kein Swap-Verkehr während der Antworten, Nextcloud `status.php` unverändert 15 ms. **Aber:** Der belegte Swap wuchs im Lauf des Tests von ca. 0,8 auf ca. 3,1 GB (kalte Seiten anderer Dienste wurden ausgelagert; Image-Builds auf dem Server spielten mit). Danach im Leerlauf kaum Verkehr (PSI avg300 0,4 %), Nextcloud-Login 30 bis 70 ms, Trafficnetwork 7 ms. Knapp: das RAM-Upgrade bleibt die wichtigste Verbesserung; wird es zäh, `CAT_LOCAL_KEEP_ALIVE` auf 2m senken oder `CAT_LOCAL_MODEL` leeren.
 - Qualität (7 Testfragen): Rechnen, Geräteliste und Gedächtnis schreiben/lesen korrekt. Gedicht und lange Geschichte mäßig (Deutsch im Detail schwach), "animierte Uhr" ohne Claude nicht lösbar: genau die Fälle für Claude. Gefundene Schwäche: Antwort in der Ich-Form statt "du" (Prompt nachgebessert, nicht erneut gemessen).
 
 **Abnahme**
