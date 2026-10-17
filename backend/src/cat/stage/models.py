@@ -31,9 +31,10 @@ class ChartSpec(BaseModel):
 
 class StageItem(BaseModel):
     id: str
-    kind: Literal["html", "chart", "markdown", "devices"]
+    kind: Literal["html", "chart", "markdown", "devices", "image"]
     title: str
-    # html: Dokument-Fragment; markdown: Text; devices: optionaler Raumfilter. Bei chart leer.
+    # html: Dokument-Fragment; markdown: Text; devices: optionaler Raumfilter; image: Dateiname
+    # im Dateieingang (wird über /api/files/<name> geladen). Bei chart leer.
     content: str = ""
     chart: ChartSpec | None = None
     created_at: float

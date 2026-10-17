@@ -326,3 +326,22 @@ Auftrag des Nutzers: Oberfläche nach den Vorlagen (Iron-Man/Jarvis-Desktops) ko
 **Abnahme**
 - Frontend 108 Tests (vorher 91), `tsc` sauber, Build 428 kB. Im Browser (lokaler Dev-Server, Anmeldung mit Testpasswort): Anmeldeseite, Arbeitsraum, Chat-Overlay, Stage über dem Kern und Mobilansicht (375 px) angesehen und in Ordnung.
 - **Nicht geprüft:** größere Bildschirme (die Vorschau des Browser-Panels war nur 800x366 px groß; die Emulation größerer Fenster wurde abgeschnitten dargestellt), echtes Mikrofon-Autostart im Browser (braucht HTTPS oder localhost mit Server-Sprache), Touch-Bedienung.
+
+## Phase 12: HTTPS, freier Arbeitsraum, Dateien ablegen (2026-10-17)
+
+**HTTPS für das Browser-Mikrofon (gewählt: Cat-eigenes HTTPS, kein Eingriff in Caddy)**
+- `cat.serve` startet zwei Listener in einem Prozess: HTTP (8000, Satelliten, Health-Check) und HTTPS (8443 im Container, `https://192.168.0.10:8490` auf dem Server; 8443 war durch openHAB belegt). Das Login-Cookie ist über HTTPS `Secure`.
+- `scripts/make_certs.sh`: eigene CA (10 Jahre) und Serverzertifikat (800 Tage, bis 25.12.2028, SAN: 192.168.0.10, homeserver, localhost). Der CA-Schlüssel liegt außerhalb von `data/` (`/srv/homelm/ca-private`, Cat-Container sieht ihn nicht). Die öffentliche `ca.crt` wurde Ihnen als Datei geschickt; Anleitung je Gerät in `docs/https.md`.
+- Geprüft: Zertifikat gegen die CA verifiziert (für `homeserver` und die IP), `/health` und Login-Seite über HTTPS 200, HTTP 8090 unverändert. **Nicht abgenommen:** Browser-Test mit Mikrofon. Der Norton-Web-Schutz auf Ihrem PC ersetzt das Zertifikat durch ein eigenes "Untrusted Root", bis die CA in Windows installiert ist.
+- Ein Fehlstart gehört dazu: Der erste Neustart scheiterte am belegten Port 8443, Cat war dadurch etwa eine Minute aus, bis ich den Port auf 8490 legte.
+
+**Freier Arbeitsraum** (`frontend/src/lib/layout.ts`, `hooks/useLayout.ts`, `hud/CanvasItem.tsx`, `hud/LayoutToolbar.tsx`)
+- Alle Elemente (Datum, Uhr, System, Uptime, Wetter, Geräte, Dateien, Cat-Kern, Sprache, Stage) sind frei verschieb- und skalierbar (Maus, Touch, Tastatur), ausblendbar, mit Stapelreihenfolge; Rechtecke in Anteilen der Fläche, gespeichert im Browser. Ab 1024 px; darunter bleibt die gestapelte Ansicht. Details: `docs/ui.md`.
+
+**Dateien per Drag-and-drop** (`backend/src/cat/files.py`, `api_files.py`, Frontend `useFileDrop`, `useFiles`, `FilesPanel`, `UploadStatus`)
+- Upload überall ins Fenster ziehen oder per "Datei wählen": gespeichert in `data/inbox` (25 MB je Datei, 500 MB gesamt, bereinigte Namen, Audit-Log, Login und Origin-Prüfung, Auslieferung mit `nosniff` und Sandbox-CSP). Bilder und Texte erscheinen sofort auf der Stage (neue Stage-Art `image`). Werkzeuge `list_files` und `read_file` für das lokale Modell; Claude sieht den Ordner schreibgeschützt unter `/inbox` (auch Bilder und PDFs).
+
+**Abnahme**
+- Backend 440 Tests (+14 Dateien, +5 HTTPS), Frontend 133 Tests (+25: Layout-Logik, Anpassen per Tastatur und Zeiger, Speichern/Laden, Ausblenden, Drop und Upload mit Statusmeldungen), Brücke 16. Im Browser (lokaler Dev-Server): Arbeitsraum, Anpassen-Modus mit Griffen, echtes Ziehen eines Widgets, Drag-and-drop einer Markdown-Datei (Ablagefläche, Upload, Stage, Dateiliste, Statusmeldung) angesehen und in Ordnung.
+- **Nicht geprüft:** echte Datei aus dem Explorer (die Browser-Steuerung kann nur ein simuliertes Drop-Ereignis senden), Skalieren per Touch auf einem Tablet, Claude liest eine abgelegte PDF (die Brücke muss dafür mit der neuen Compose-Datei neu erzeugt werden).
+- **Offen (braucht Sie):** `claude.env` gehört `root` (Rechte 600), ich kann die Brücke nicht neu erzeugen. Für den Dateizugriff von Claude einmal ausführen: `cd /srv/homelm && sudo docker compose --profile claude up -d --force-recreate claude-bridge`.

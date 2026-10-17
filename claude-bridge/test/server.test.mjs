@@ -36,6 +36,13 @@ describe("Hilfsfunktionen", () => {
     assert.equal(parseResult(JSON.stringify({ type: "result", is_error: true, result: "rate limit hit" })).kind, "limit");
   });
 
+  test("buildArgs: Dateieingang nur lesend und nur zusammen mit dem Gedächtnis", () => {
+    const withInbox = buildArgs({ model: "sonnet", system: "", memory: true, inboxDir: "/inbox" });
+    assert.equal(withInbox[withInbox.indexOf("--add-dir") + 1], "/inbox");
+    assert.ok(!buildArgs({ model: "sonnet", system: "", memory: true, inboxDir: null }).includes("--add-dir"));
+    assert.ok(!buildArgs({ model: "sonnet", system: "", memory: false, inboxDir: "/inbox" }).includes("--add-dir"));
+  });
+
   test("buildArgs: nur Lesewerkzeuge mit Gedächtnis, sonst keine", () => {
     const withMemory = buildArgs({ model: "sonnet", system: "S", memory: true });
     const at = withMemory.indexOf("--tools");

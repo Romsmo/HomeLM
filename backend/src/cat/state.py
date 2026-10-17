@@ -8,6 +8,7 @@ from cat.config import Settings
 from cat.devices.allowlist import load_allowlist
 from cat.devices.confirm import ConfirmManager
 from cat.devices.service import DeviceService
+from cat.files import Inbox
 from cat.intents.fastpath import FastPath
 from cat.intents.vocabulary import load_vocabulary
 from cat.memory.service import MemoryService
@@ -57,6 +58,7 @@ class AppState:
         self.voice: VoiceEngine | None = None
         self.satellites = SatelliteRegistry.load(settings.satellites_file)
         self.sandbox = SandboxClient(settings.sandbox_dir)
+        self.inbox = Inbox(settings.inbox_dir)
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fastpath = FastPath(self.devices, load_vocabulary(settings.synonyms_file))
         # Wird vom Plugin-Manager gesetzt (Phase 3): Widget neu laden, True bei Erfolg.

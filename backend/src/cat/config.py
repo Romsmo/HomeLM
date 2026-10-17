@@ -128,6 +128,10 @@ class Settings(BaseSettings):
         return self.data_dir / "plugins"
 
     @property
+    def inbox_dir(self) -> Path:
+        return self.data_dir / "inbox"
+
+    @property
     def memory_dir(self) -> Path:
         return self.data_dir / "memory"
 

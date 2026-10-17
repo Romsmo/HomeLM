@@ -10,6 +10,7 @@ from cat.claude.bridge import ClaudeBridge
 from cat.claude.budget import ClaudeBudget
 from cat.devices.service import DeviceService
 from cat.devices.tools import build_device_tools
+from cat.files import Inbox, build_file_tools
 from cat.llm.base import LLMError, LLMProvider
 from cat.llm.fallback import FallbackProvider
 from cat.llm.litellm_provider import LiteLLMProvider
@@ -54,6 +55,7 @@ def build_registry(
     memory: MemoryService | None = None,
     sandbox: SandboxClient | None = None,
     pending: PendingPlugins | None = None,
+    inbox: Inbox | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     register_stage_tools(registry)
@@ -68,6 +70,9 @@ def build_registry(
             registry.register(tool)
     if pending is not None:
         for tool in build_pending_tools(pending):
+            registry.register(tool)
+    if inbox is not None:
+        for tool in build_file_tools(inbox):
             registry.register(tool)
     for tool in extra_tools:
         registry.register(tool)
@@ -113,6 +118,7 @@ def build_responder(
         memory=state.memory,
         sandbox=state.sandbox if settings.sandbox else None,
         pending=state.pending_plugins,
+        inbox=state.inbox,
     )
     if settings.local_model:
         return _build_routed(state, registry, provider, claude or build_claude(state))

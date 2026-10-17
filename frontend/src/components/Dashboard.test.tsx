@@ -29,14 +29,20 @@ function setup(over: Partial<CatState> = {}) {
 beforeEach(() => {
   send.mockClear();
   dispatch.mockClear();
+  window.localStorage.clear();
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("Dashboard (Arbeitsraum)", () => {
   it("zeigt Cat in der Mitte und die Widgets ringsum, ohne Chat", () => {
     setup();
     expect(screen.getByRole("img", { name: "Cat wartet" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Widgets links")).toBeInTheDocument();
-    expect(screen.getByLabelText("Widgets rechts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Arbeitsraum")).toBeInTheDocument();
+    for (const name of ["System", "Wetter", "Geräte", "Dateien", "Uptime"]) {
+      expect(screen.getByRole("region", { name })).toBeInTheDocument();
+    }
     expect(screen.queryByRole("dialog", { name: "Chat mit Cat" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Stage")).not.toBeInTheDocument();
   });

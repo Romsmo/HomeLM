@@ -18,7 +18,7 @@ Endpunkt: `GET /ws` (WebSocket), nur mit gültigem Sitzungs-Cookie (siehe unten)
 | `chat.delta` | `id`, `delta` | Textteil für die Nachricht mit dieser `id` (Streaming). |
 | `chat.done` | `id` | Antwort ist vollständig. |
 | `chat.clear` | | Verlauf wurde geleert. |
-| `stage.show` | `item` (`id`, `kind` = `html`/`chart`/`markdown`/`devices`, `title`, `content`, `chart`, `created_at`) | Neuer Stage-Inhalt. |
+| `stage.show` | `item` (`id`, `kind` = `html`/`chart`/`markdown`/`devices`/`image`, `title`, `content`, `chart`, `created_at`) | Neuer Stage-Inhalt. |
 | `stage.clear` | | Stage und Historie geleert. |
 | `widget.update` | `id`, `kind`, `title`, `status` (`loading`/`ok`/`error`), `data`, `error`, `updated_at`, `refreshable` | Neuer Zustand eines Widgets. |
 | `voice.state` | `state` (`idle`/`listening`/`thinking`/`speaking`) | Zustand des Cat-Orbs. |

@@ -45,7 +45,7 @@ export interface ChartSpec {
 
 export interface StageItem {
   id: string;
-  kind: "html" | "chart" | "markdown" | "devices";
+  kind: "html" | "chart" | "markdown" | "devices" | "image";
   title: string;
   content: string;
   chart: ChartSpec | null;

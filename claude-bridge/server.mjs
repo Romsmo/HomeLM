@@ -19,7 +19,7 @@ const MODEL_RE = /^[A-Za-z0-9._\[\]-]{1,60}$/;
 const MAX_BODY = 300_000;
 
 /** Argumente für `claude`. Alles Sicherheitsrelevante steht hier an einer Stelle. */
-export function buildArgs({ model, system, memory }, { restricted = true, maxTurns = 8 } = {}) {
+export function buildArgs({ model, system, memory, inboxDir }, { restricted = true, maxTurns = 8 } = {}) {
   const args = [
     "-p",
     "--output-format", "json",
@@ -32,6 +32,8 @@ export function buildArgs({ model, system, memory }, { restricted = true, maxTur
   ];
   if (restricted) args.push("--restricted");
   if (memory) args.push("--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob");
+  // Abgelegte Dateien des Nutzers (nur lesbar): Claude kann Bilder und PDFs mit Read ansehen.
+  if (memory && inboxDir) args.push("--add-dir", inboxDir);
   else args.push("--tools", "");
   if (system) args.push("--append-system-prompt", system);
   return args;
@@ -112,6 +114,7 @@ export function createServer({
   bin = process.env.CLAUDE_BIN || "claude",
   binArgs = [],
   memoryDir = process.env.MEMORY_DIR || "/memory",
+  inboxDir = process.env.INBOX_DIR || "/inbox",
   timeoutMs = Number(process.env.ASK_TIMEOUT_S || 200) * 1000,
   restricted = process.env.CLAUDE_RESTRICTED !== "0",
   maxTurns = Number(process.env.MAX_TURNS || 8),
@@ -157,9 +160,10 @@ export function createServer({
     if (typeof model !== "string" || !MODEL_RE.test(model)) return { status: 400, body: { ok: false, kind: "error", message: "model ungültig" } };
     const useMemory = memory === true && fs.existsSync(memoryDir);
     const cwd = useMemory ? memoryDir : os.tmpdir();
+    const useInbox = useMemory && fs.existsSync(inboxDir) ? inboxDir : null;
     if (waiting >= maxQueue) return { status: 200, body: { ok: false, kind: "busy", message: "Claude ist gerade mit anderen Fragen beschäftigt." } };
     waiting += 1;
-    const slot = tail.then(() => run(buildArgs({ model, system, memory: useMemory }, { restricted, maxTurns }), prompt, cwd));
+    const slot = tail.then(() => run(buildArgs({ model, system, memory: useMemory, inboxDir: useInbox }, { restricted, maxTurns }), prompt, cwd));
     tail = slot.catch(() => {});
     try {
       return { status: 200, body: await slot };
@@ -179,7 +183,7 @@ export function createServer({
         child.on("close", () => { clearTimeout(timer); resolve(out.trim() || "unbekannt"); });
       });
     }
-    return { ok: true, claude: version, token: Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN), memory: fs.existsSync(memoryDir) };
+    return { ok: true, claude: version, token: Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN), memory: fs.existsSync(memoryDir), inbox: fs.existsSync(inboxDir) };
   }
 
   return http.createServer(async (req, res) => {

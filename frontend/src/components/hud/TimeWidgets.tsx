@@ -7,8 +7,9 @@ export function DateRing() {
   const now = useNow(30_000);
   const dayProgress = (now.getHours() * 60 + now.getMinutes()) / 1440;
   return (
+    <div className="flex h-full w-full items-center justify-center">
     <div
-      className="relative mx-auto aspect-square w-full max-w-[min(11rem,26vh)]"
+      className="@container relative aspect-square h-full max-h-full max-w-full [container-type:size]"
       role="img"
       aria-label={now.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
     >
@@ -33,7 +34,7 @@ export function DateRing() {
           <div className="text-[0.7rem] tracking-[0.25em] text-cyan-300/80 uppercase">
             {now.toLocaleDateString("de-DE", { month: "long" })}
           </div>
-          <div className="hud-text-glow my-1 text-[clamp(2rem,6.5vh,3.6rem)] font-light tabular-nums text-cyan-50">
+          <div className="hud-text-glow my-1 text-[clamp(1.6rem,12cqmin,3.6rem)] font-light tabular-nums text-cyan-50">
             {now.getDate()}
           </div>
           <div className="text-[0.7rem] tracking-[0.2em] text-cyan-300/70 uppercase">
@@ -41,6 +42,7 @@ export function DateRing() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -50,8 +52,9 @@ export function ClockRing() {
   const now = useNow(1000);
   const seconds = now.getSeconds() + now.getMilliseconds() / 1000;
   return (
+    <div className="flex h-full w-full items-center justify-center">
     <div
-      className="relative mx-auto aspect-square w-full max-w-[min(9rem,18vh)]"
+      className="@container relative aspect-square h-full max-h-full max-w-full [container-type:size]"
       role="img"
       aria-label={now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
     >
@@ -71,10 +74,11 @@ export function ClockRing() {
         />
       </svg>
       <div className="absolute inset-0 grid place-items-center">
-        <span className="hud-text-glow text-[clamp(1.1rem,3.2vh,1.9rem)] font-light tabular-nums text-cyan-50">
+        <span className="hud-text-glow text-[clamp(1rem,16cqmin,1.9rem)] font-light tabular-nums text-cyan-50">
           {now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
+    </div>
     </div>
   );
 }

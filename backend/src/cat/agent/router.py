@@ -188,7 +188,8 @@ class RoutedResponder:
         memory = await asyncio.to_thread(self._state.memory.context_for, question)
         # Das lokale Modell darf die Frage präzisieren; bei Ausfall steht dort nur der Fehlertext.
         note = escalation.question if escalation.reason == "model" else ""
-        prompt = build_prompt(history, note, memory, spoken)
+        files = await asyncio.to_thread(self._file_note)
+        prompt = build_prompt(history, note, memory, spoken, files)
         self._budget.record()
         await self._state.set_provider(f"claude/{self._claude.model}", False)
         try:
@@ -212,6 +213,14 @@ class RoutedResponder:
             yield part
         if not spoken:
             yield FOOTER_PREFIX
+
+    def _file_note(self) -> str:
+        """Hinweis auf die zuletzt abgelegten Dateien (Pfad im Container der Brücke: /inbox)."""
+        recent = self._state.inbox.list(5)
+        if not recent:
+            return ""
+        lines = [f"- /inbox/{f.name} ({f.kind})" for f in recent]
+        return "Zuletzt vom Nutzer abgelegte Dateien (neueste zuerst):\n" + "\n".join(lines)
 
     def _block_after(self, result: ClaudeResult) -> None:
         assert self._budget is not None

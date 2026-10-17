@@ -13,6 +13,7 @@ const KIND_LABEL: Record<StageItem["kind"], string> = {
   chart: "Diagramm",
   markdown: "Text",
   devices: "Geräte",
+  image: "Bild",
 };
 
 interface DeviceProps {
@@ -42,6 +43,15 @@ function Content({ item, deviceProps }: { item: StageItem; deviceProps: DevicePr
           error={deviceProps.deviceError}
           room={item.content}
           onCommand={deviceProps.onDeviceCommand}
+        />
+      );
+    case "image":
+      return (
+        <img
+          key={item.id}
+          src={`/api/files/${encodeURIComponent(item.content)}`}
+          alt={item.title}
+          className="h-full w-full object-contain p-3"
         />
       );
     case "markdown":

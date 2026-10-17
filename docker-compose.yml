@@ -106,6 +106,7 @@ services:
       MEMORY_DIR: /memory
     volumes:
       - ./data/memory:/memory:ro
+      - ./data/inbox:/inbox:ro
 
 networks:
   default:
