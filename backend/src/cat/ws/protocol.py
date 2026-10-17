@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from cat.devices.models import Control, DeviceInfo
 from cat.stage.models import StageItem
 
 Role = Literal["user", "assistant", "system"]
@@ -70,6 +71,35 @@ class VoiceState(_Event):
     state: VoiceStateName
 
 
+class DeviceList(_Event):
+    type: Literal["device.list"] = "device.list"
+    control: Control
+    error: str | None = None
+    devices: list[DeviceInfo]
+
+
+class DeviceStateEvent(_Event):
+    type: Literal["device.state"] = "device.state"
+    id: str
+    state: str | None
+    unit: str | None = None
+    online: bool = True
+
+
+class ConfirmRequest(_Event):
+    type: Literal["confirm.request"] = "confirm.request"
+    id: str
+    device: str
+    command: str
+    summary: str
+    expires_in: int
+
+
+class ConfirmResolved(_Event):
+    type: Literal["confirm.resolved"] = "confirm.resolved"
+    id: str
+
+
 class ErrorEvent(_Event):
     type: Literal["error"] = "error"
     message: str
@@ -84,6 +114,10 @@ ServerEvent = (
     | StageClear
     | WidgetUpdate
     | VoiceState
+    | DeviceList
+    | DeviceStateEvent
+    | ConfirmRequest
+    | ConfirmResolved
     | ErrorEvent
 )
 
@@ -109,8 +143,25 @@ class ClientWidgetRefresh(_Event):
     id: str
 
 
+class ClientConfirmResponse(_Event):
+    type: Literal["confirm.response"] = "confirm.response"
+    id: str
+    approved: bool
+
+
+class ClientDeviceCommand(_Event):
+    type: Literal["device.command"] = "device.command"
+    id: str
+    command: str = Field(min_length=1, max_length=20)
+
+
 ClientEvent = Annotated[
-    ClientChatMessage | ClientChatClear | ClientStageClear | ClientWidgetRefresh,
+    ClientChatMessage
+    | ClientChatClear
+    | ClientStageClear
+    | ClientWidgetRefresh
+    | ClientConfirmResponse
+    | ClientDeviceCommand,
     Field(discriminator="type"),
 ]
 
@@ -125,6 +176,17 @@ SERVER_EVENT_TYPES = (
     "stage.clear",
     "widget.update",
     "voice.state",
+    "device.list",
+    "device.state",
+    "confirm.request",
+    "confirm.resolved",
     "error",
 )
-CLIENT_EVENT_TYPES = ("chat.message", "chat.clear", "stage.clear", "widget.refresh")
+CLIENT_EVENT_TYPES = (
+    "chat.message",
+    "chat.clear",
+    "stage.clear",
+    "widget.refresh",
+    "confirm.response",
+    "device.command",
+)

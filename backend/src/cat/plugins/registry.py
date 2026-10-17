@@ -1,25 +1,42 @@
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from cat.config import Settings
+from cat.devices.service import DeviceService
 from cat.plugins.base import Plugin
+from cat.plugins.homeassistant import HomeAssistantPlugin
+from cat.plugins.openhab import OpenHabPlugin
 from cat.plugins.system import SystemPlugin
 from cat.plugins.weather import WeatherPlugin
 
 log = logging.getLogger("cat.plugins")
 
-# Name (wie in CAT_PLUGINS) -> Fabrik. Weitere Plugins (openhab, homeassistant) kommen in Phase 4.
-AVAILABLE: dict[str, type[Plugin]] = {
-    "system": SystemPlugin,
-    "weather": WeatherPlugin,
+
+@dataclass(frozen=True)
+class PluginServices:
+    """Gemeinsame Dienste, die Plugins bei der Erzeugung bekommen."""
+
+    devices: DeviceService
+
+
+Factory = Callable[[PluginServices], Plugin]
+
+# Name (wie in CAT_PLUGINS) -> Fabrik.
+AVAILABLE: dict[str, Factory] = {
+    "system": lambda _: SystemPlugin(),
+    "weather": lambda _: WeatherPlugin(),
+    "openhab": lambda services: OpenHabPlugin(services.devices),
+    "homeassistant": lambda services: HomeAssistantPlugin(services.devices),
 }
 
 
-def build_plugins(settings: Settings) -> list[Plugin]:
+def build_plugins(settings: Settings, services: PluginServices) -> list[Plugin]:
     plugins: list[Plugin] = []
     for name in settings.enabled_plugins:
         factory = AVAILABLE.get(name)
         if factory is None:
             log.warning("Unbekanntes Plugin '%s' in CAT_PLUGINS wird ignoriert", name)
             continue
-        plugins.append(factory())
+        plugins.append(factory(services))
     return plugins

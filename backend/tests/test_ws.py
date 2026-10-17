@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from cat.ws.protocol import CLIENT_EVENT_TYPES, SERVER_EVENT_TYPES
+from tests.helpers import drain_replay
 
 
 def _recv_until(ws: Any, type_: str, limit: int = 50) -> list[dict[str, Any]]:
@@ -34,6 +35,7 @@ def test_ws_rejects_foreign_origin(authed: TestClient) -> None:
 
 def test_echo_streams_live(authed: TestClient) -> None:
     with authed.websocket_connect("/ws") as ws:
+        drain_replay(ws)
         ws.send_text(json.dumps({"type": "chat.message", "text": "Hallo Cat"}))
         first = json.loads(ws.receive_text())
         assert first["type"] == "chat.message" and first["role"] == "user"
@@ -45,23 +47,26 @@ def test_echo_streams_live(authed: TestClient) -> None:
 
 def test_history_replayed_and_clear(authed: TestClient) -> None:
     with authed.websocket_connect("/ws") as ws:
+        drain_replay(ws)
         ws.send_text(json.dumps({"type": "chat.message", "text": "eins"}))
         _recv_until(ws, "chat.done")
         _recv_until(ws, "voice.state")
     with authed.websocket_connect("/ws") as ws:
-        first = json.loads(ws.receive_text())
-        second = json.loads(ws.receive_text())
+        replay = drain_replay(ws)
+        first, second = replay[0], replay[1]
         assert (first["role"], first["text"]) == ("user", "eins")
         assert (second["role"], second["text"]) == ("assistant", "Echo: eins")
+        assert replay[-1]["type"] == "device.list"
         ws.send_text(json.dumps({"type": "chat.clear"}))
         assert json.loads(ws.receive_text())["type"] == "chat.clear"
     with authed.websocket_connect("/ws") as ws:
-        ws.send_text(json.dumps({"type": "chat.clear"}))
-        assert json.loads(ws.receive_text())["type"] == "chat.clear"
+        replay = drain_replay(ws)
+        assert [e["type"] for e in replay] == ["device.list"]
 
 
 def test_invalid_message_gives_error(authed: TestClient) -> None:
     with authed.websocket_connect("/ws") as ws:
+        drain_replay(ws)
         ws.send_text("kein json")
         assert json.loads(ws.receive_text())["type"] == "error"
         ws.send_text(json.dumps({"type": "chat.message", "text": ""}))
@@ -70,6 +75,7 @@ def test_invalid_message_gives_error(authed: TestClient) -> None:
 
 def test_unknown_widget_refresh_gives_error(authed: TestClient) -> None:
     with authed.websocket_connect("/ws") as ws:
+        drain_replay(ws)
         ws.send_text(json.dumps({"type": "widget.refresh", "id": "nope"}))
         assert json.loads(ws.receive_text())["type"] == "error"
 

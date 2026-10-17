@@ -18,13 +18,17 @@ Endpunkt: `GET /ws` (WebSocket), nur mit gültigem Sitzungs-Cookie (siehe unten)
 | `chat.delta` | `id`, `delta` | Textteil für die Nachricht mit dieser `id` (Streaming). |
 | `chat.done` | `id` | Antwort ist vollständig. |
 | `chat.clear` | | Verlauf wurde geleert. |
-| `stage.show` | `item` (`id`, `kind` = `html`/`chart`/`markdown`, `title`, `content`, `chart`, `created_at`) | Neuer Stage-Inhalt. |
+| `stage.show` | `item` (`id`, `kind` = `html`/`chart`/`markdown`/`devices`, `title`, `content`, `chart`, `created_at`) | Neuer Stage-Inhalt. |
 | `stage.clear` | | Stage und Historie geleert. |
 | `widget.update` | `id`, `kind`, `title`, `status` (`loading`/`ok`/`error`), `data`, `error`, `updated_at`, `refreshable` | Neuer Zustand eines Widgets. |
 | `voice.state` | `state` (`idle`/`listening`/`thinking`/`speaking`) | Zustand des Cat-Orbs. |
+| `device.list` | `control` (`readonly`/`test`/`full`), `error`, `devices` (`id`, `name`, `room`, `type`, `risk`, `state`, `unit`, `online`, `controllable`, `test`) | Alle freigegebenen Geräte. `control` ist der Steuerungsmodus des Servers; `controllable` je Gerät folgt aus Modus, Testflag und Typ. |
+| `device.state` | `id`, `state`, `unit`, `online` | Zustandsänderung eines Geräts. |
+| `confirm.request` | `id`, `device`, `command`, `summary`, `expires_in` | Rückfrage für ein Gerät mit Risiko `high`. Der Server führt den Befehl nur nach `confirm.response` mit `approved: true` aus. |
+| `confirm.resolved` | `id` | Rückfrage ist erledigt (beantwortet, abgelaufen oder abgebrochen): Dialog schließen. |
 | `error` | `message` | Fehlermeldung an den Nutzer. |
 
-Beim Verbinden sendet der Server zuerst den Chatverlauf (`chat.message`), dann die Stage-Historie (`stage.show`) und die aktuellen Widget-Zustände (`widget.update`).
+Beim Verbinden sendet der Server zuerst den Chatverlauf (`chat.message`), dann die Stage-Historie (`stage.show`), die aktuellen Widget-Zustände (`widget.update`) und zuletzt die Geräteliste (`device.list`).
 
 ## Browser an Server
 
@@ -34,5 +38,7 @@ Beim Verbinden sendet der Server zuerst den Chatverlauf (`chat.message`), dann d
 | `chat.clear` | | Verlauf leeren (nur wenn Cat gerade nicht antwortet). |
 | `stage.clear` | | Stage leeren. |
 | `widget.refresh` | `id` | Widget sofort neu laden. |
+| `confirm.response` | `id`, `approved` | Antwort auf `confirm.request`. Unbekannte, abgelaufene oder schon beantwortete IDs werden ignoriert. |
+| `device.command` | `id`, `command` | Befehl aus dem Geräte-Panel (z. B. `on`, `off`, `up`, `50`). Läuft durch dieselben Prüfungen wie ein Tool-Aufruf: Allowlist, Modus, Befehl, Bestätigung bei `high`. |
 
-Ungültige Nachrichten beantwortet der Server mit `error`, die Verbindung bleibt offen. Geplant (Phase 4): `device.state`, `confirm.request`, `confirm.response`.
+Ungültige Nachrichten beantwortet der Server mit `error`, die Verbindung bleibt offen.

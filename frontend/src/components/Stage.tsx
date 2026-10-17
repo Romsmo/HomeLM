@@ -1,7 +1,8 @@
 import { Suspense, lazy } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { StageItem, VoiceStateName } from "../protocol";
+import type { ControlMode, DeviceInfo, StageItem, VoiceStateName } from "../protocol";
+import DevicePanel from "./devices/DevicePanel";
 import HtmlFrame from "./stage/HtmlFrame";
 import Orb from "./Orb";
 
@@ -12,9 +13,17 @@ const KIND_LABEL: Record<StageItem["kind"], string> = {
   html: "Grafik",
   chart: "Diagramm",
   markdown: "Text",
+  devices: "Geräte",
 };
 
-function Content({ item }: { item: StageItem }) {
+interface DeviceProps {
+  devices: DeviceInfo[];
+  control: ControlMode;
+  deviceError: string | null;
+  onDeviceCommand: (id: string, command: string) => void;
+}
+
+function Content({ item, deviceProps }: { item: StageItem; deviceProps: DeviceProps }) {
   switch (item.kind) {
     case "html":
       return <HtmlFrame key={item.id} html={item.content} title={item.title} />;
@@ -25,6 +34,16 @@ function Content({ item }: { item: StageItem }) {
         </Suspense>
       ) : (
         <p className="p-4 text-slate-400">Keine Diagrammdaten.</p>
+      );
+    case "devices":
+      return (
+        <DevicePanel
+          devices={deviceProps.devices}
+          control={deviceProps.control}
+          error={deviceProps.deviceError}
+          room={item.content}
+          onCommand={deviceProps.onDeviceCommand}
+        />
       );
     case "markdown":
       return (
@@ -52,7 +71,15 @@ export default function Stage({
   index,
   onGo,
   onClear,
+  devices = [],
+  control = "readonly",
+  deviceError = null,
+  onDeviceCommand = () => {},
 }: {
+  devices?: DeviceInfo[];
+  control?: ControlMode;
+  deviceError?: string | null;
+  onDeviceCommand?: (id: string, command: string) => void;
   voice: VoiceStateName;
   items: StageItem[];
   index: number;
@@ -70,7 +97,9 @@ export default function Stage({
           <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-2">
             <div className="flex min-w-0 items-baseline gap-2">
               <h2 className="truncate text-sm font-medium text-slate-100">{item.title}</h2>
-              <span className="text-xs text-slate-500">{KIND_LABEL[item.kind]}</span>
+              {KIND_LABEL[item.kind] !== item.title && (
+                <span className="text-xs text-slate-500">{KIND_LABEL[item.kind]}</span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-xs">
               <button
@@ -101,7 +130,7 @@ export default function Stage({
             </div>
           </header>
           <div className="min-h-0 flex-1">
-            <Content item={item} />
+            <Content item={item} deviceProps={{ devices, control, deviceError, onDeviceCommand }} />
           </div>
         </>
       ) : (

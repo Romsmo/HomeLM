@@ -3,6 +3,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 
 from cat.agent.tools import ToolContext, ToolError, ToolRegistry
+from cat.audit import AuditLog
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
@@ -19,11 +20,13 @@ class Agent:
         registry: ToolRegistry,
         system_prompt: Callable[[], str],
         max_steps: int = 6,
+        audit: AuditLog | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
         self._system_prompt = system_prompt
         self._max_steps = max_steps
+        self._audit = audit
 
     async def run(self, history: list[Message], ctx: ToolContext) -> AsyncIterator[str]:
         """Liefert den Antworttext in Teilen. `history` wird nicht verändert."""
@@ -56,18 +59,25 @@ class Agent:
         yield ("\n\n" if wrote_text else "") + LIMIT_NOTICE
 
     async def _execute(self, call: ToolCall, ctx: ToolContext) -> str:
+        """Führt ein Werkzeug aus und protokolliert jeden Aufruf (auch Fehlschläge)."""
+        result, ok = await self._run_tool(call, ctx)
+        if self._audit is not None:
+            await self._audit.record(call.name, call.arguments, result, ok=ok, source="agent")
+        return result
+
+    async def _run_tool(self, call: ToolCall, ctx: ToolContext) -> tuple[str, bool]:
         tool = self._registry.get(call.name)
         if tool is None:
-            return f"Fehler: Das Werkzeug '{call.name}' gibt es nicht."
+            return f"Fehler: Das Werkzeug '{call.name}' gibt es nicht.", False
         if call.arguments is None:
-            return "Fehler: Die Argumente sind kein gültiges JSON-Objekt."
+            return "Fehler: Die Argumente sind kein gültiges JSON-Objekt.", False
         try:
-            return await tool.handler(call.arguments, ctx)
+            return await tool.handler(call.arguments, ctx), True
         except ToolError as exc:
-            return f"Fehler: {exc}"
+            return f"Fehler: {exc}", False
         except Exception:
             log.exception("Werkzeug %s ist abgestürzt", call.name)
-            return "Fehler: Das Werkzeug ist intern fehlgeschlagen."
+            return "Fehler: Das Werkzeug ist intern fehlgeschlagen.", False
 
 
 def _assistant_message(text: str, calls: list[ToolCall]) -> Message:

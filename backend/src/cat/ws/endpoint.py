@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from cat.devices.ui import handle_ui_command
 from cat.dialog import handle_user_text
 from cat.state import AppState
 from cat.ws.hub import Connection
@@ -11,6 +12,8 @@ from cat.ws.protocol import (
     ChatClear,
     ClientChatClear,
     ClientChatMessage,
+    ClientConfirmResponse,
+    ClientDeviceCommand,
     ClientStageClear,
     ClientWidgetRefresh,
     ErrorEvent,
@@ -38,6 +41,7 @@ async def _replay(state: AppState, conn: Connection) -> None:
         await conn.send(StageShow(item=item))
     for widget in state.widgets.values():
         await conn.send(widget)
+    await conn.send(state.devices.list_event())
 
 
 @router.websocket("/ws")
@@ -67,7 +71,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 async def _dispatch(
     state: AppState,
     conn: Connection,
-    event: ClientChatMessage | ClientChatClear | ClientStageClear | ClientWidgetRefresh,
+    event: ClientChatMessage
+    | ClientChatClear
+    | ClientStageClear
+    | ClientWidgetRefresh
+    | ClientConfirmResponse
+    | ClientDeviceCommand,
 ) -> None:
     match event:
         case ClientChatMessage(text=text):
@@ -87,3 +96,9 @@ async def _dispatch(
             if refresh is None or not await refresh(widget_id):
                 message = f"Widget '{widget_id}' ist nicht aktualisierbar"
                 await conn.send(ErrorEvent(message=message))
+        case ClientConfirmResponse(id=confirm_id, approved=approved):
+            # Unbekannte oder schon beantwortete IDs werden stillschweigend ignoriert.
+            state.confirm.resolve(confirm_id, approved)
+        case ClientDeviceCommand(id=device_id, command=command):
+            # Als Task: bei "high" wartet der Befehl auf Bestätigung, der Loop muss frei bleiben.
+            state.spawn(handle_ui_command(state, device_id, command))

@@ -19,6 +19,9 @@ services:
       HOME: /tmp
       # Datenträger-Widget: Partition des Datenordners (nicht das Overlay-Dateisystem des Containers).
       CAT_DISK_PATH: /data
+    # openHAB läuft im Host-Netzwerk: aus dem Container über host.docker.internal erreichbar.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
     mem_limit: 768m

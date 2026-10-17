@@ -2,8 +2,12 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from typing import Any, Protocol
 
+from cat.audit import AuditLog
 from cat.auth import Auth
 from cat.config import Settings
+from cat.devices.allowlist import load_allowlist
+from cat.devices.confirm import ConfirmManager
+from cat.devices.service import DeviceService
 from cat.stage.store import StageStore
 from cat.ws.hub import Hub
 from cat.ws.protocol import ChatMessage, ServerEvent, WidgetUpdate
@@ -28,6 +32,15 @@ class AppState:
         self.run_lock = asyncio.Lock()
         self.tasks: set[asyncio.Task[None]] = set()
         self.responder: Responder | None = None
+        self.audit = AuditLog(settings.audit_file)
+        self.confirm = ConfirmManager(self.emit, lambda: bool(self.hub.connections))
+        self.devices = DeviceService(
+            load_allowlist(settings.devices_file),
+            settings.device_control,
+            self.emit,
+            self.audit,
+            self.confirm,
+        )
         # Wird vom Plugin-Manager gesetzt (Phase 3): Widget neu laden, True bei Erfolg.
         self.widget_refresher: Callable[[str], Awaitable[bool]] | None = None
 

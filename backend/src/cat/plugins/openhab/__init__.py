@@ -1,0 +1,207 @@
+"""Plugin "openhab": Items lesen, Befehle senden, Änderungen per SSE (Server-Sent Events).
+
+API-Stand (openHAB 4.2, geprüft gegen den laufenden Server, nur lesend):
+- GET  /rest/items/{name}                       Item, Feld "state" ("ON", "75", "12.6 °C", "NULL")
+- POST /rest/items/{name}  (text/plain)         Befehl senden, z. B. ON, OFF, UP, 75
+- GET  /rest/events?topics=openhab/items/*/statechanged   SSE, "data:" mit JSON; "payload" ist
+  ein JSON-Text mit "value". Alle 10 s kommt ein "alive"-Ereignis.
+- API-Token: laut Dokumentation als Benutzername bei HTTP Basic (Passwort leer).
+"""
+
+import asyncio
+import json
+import logging
+import re
+from collections.abc import AsyncIterator, Callable
+from typing import Any
+from urllib.parse import quote
+
+import httpx
+
+from cat.devices.commands import DeviceError
+from cat.devices.models import DeviceSpec
+from cat.devices.service import DeviceService, RawState
+from cat.plugins.base import BasePlugin, PluginContext
+
+log = logging.getLogger("cat.plugins.openhab")
+
+_QUANTITY = re.compile(r"^(-?\d+(?:\.\d+)?)\s+(\S.*)$")
+_COLOR = re.compile(r"^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?,(-?\d+(?:\.\d+)?)$")
+_NO_STATE = {"NULL", "UNDEF", ""}
+
+# Standardübersetzung kanonischer Befehle. Für Schlösser, Türen und Garagen gibt es bewusst
+# keine Vorgabe: Die Allowlist muss sie über command_map ausdrücklich festlegen.
+_DEFAULT_COMMANDS = {"on": "ON", "off": "OFF", "up": "UP", "down": "DOWN", "stop": "STOP"}
+_NEEDS_MAP = {"lock", "door", "garage"}
+
+
+def parse_state(value: object) -> RawState:
+    """Zerlegt einen openHAB-Zustand in Wert und Einheit."""
+    text = "" if value is None else str(value).strip()
+    if text.upper() in _NO_STATE:
+        return RawState(None)
+    color = _COLOR.match(text)
+    if color:  # Color-Item: "Farbton,Sättigung,Helligkeit", für Cat zählt die Helligkeit
+        return RawState(f"{float(color.group(1)):g}", "%")
+    match = _QUANTITY.match(text)
+    if match:
+        return RawState(match.group(1), match.group(2))
+    return RawState(text)
+
+
+def translate_command(spec: DeviceSpec, command: str) -> str:
+    if command in spec.command_map:
+        return spec.command_map[command]
+    if spec.type in _NEEDS_MAP:
+        raise DeviceError(
+            f"Für '{spec.name}' ist in devices.yaml kein command_map-Eintrag für '{command}' "
+            "hinterlegt. Ohne ihn sende ich keinen Befehl an Schlösser, Türen oder Garagen."
+        )
+    return _DEFAULT_COMMANDS.get(command, command)
+
+
+async def iter_sse(lines: AsyncIterator[str]) -> AsyncIterator[dict[str, Any]]:
+    """Liest "data:"-Zeilen eines SSE-Stroms und gibt die JSON-Objekte zurück."""
+    async for line in lines:
+        if not line.startswith("data:"):
+            continue
+        try:
+            data = json.loads(line[5:].strip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            yield data
+
+
+def state_change(event: dict[str, Any]) -> tuple[str, RawState] | None:
+    """(Item, neuer Zustand) aus einem ItemStateChangedEvent, sonst None."""
+    topic = event.get("topic")
+    if event.get("type") != "ItemStateChangedEvent" or not isinstance(topic, str):
+        return None
+    parts = topic.split("/")
+    if len(parts) != 4 or parts[:2] != ["openhab", "items"]:
+        return None
+    try:
+        payload = json.loads(event["payload"])
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return parts[2], parse_state(payload.get("value"))
+
+
+class OpenHabPlugin(BasePlugin):
+    name = "openhab"
+
+    def __init__(
+        self,
+        devices: DeviceService,
+        client: httpx.AsyncClient | None = None,
+        backoff_s: Callable[[int], float] = lambda n: min(2.0 * 2**n, 30.0),
+    ) -> None:
+        self._devices = devices
+        self._client = client
+        self._owns_client = client is None
+        self._backoff = backoff_s
+        self._task: asyncio.Task[None] | None = None
+        devices.register_backend("openhab", self)
+
+    async def start(self, ctx: PluginContext) -> None:
+        if self._client is None:
+            token = ctx.settings.openhab_token
+            self._client = httpx.AsyncClient(
+                base_url=ctx.settings.openhab_url,
+                timeout=httpx.Timeout(10.0, read=40.0),
+                auth=(token.get_secret_value(), "") if token else None,
+            )
+        self._task = asyncio.create_task(self._run())
+
+    async def stop(self) -> None:
+        if self._task:
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+            self._task = None
+        if self._client and self._owns_client:
+            await self._client.aclose()
+            self._client = None
+
+    # --- DeviceBackend ---
+
+    async def read(self, spec: DeviceSpec) -> RawState:
+        assert self._client is not None
+        try:
+            resp = await self._client.get(
+                f"/rest/items/{quote(spec.item, safe='')}", params={"metadata": "none"}
+            )
+        except httpx.HTTPError as exc:
+            raise DeviceError("openHAB ist nicht erreichbar.") from exc
+        if resp.status_code == 404:
+            raise DeviceError(f"Das Item '{spec.item}' gibt es in openHAB nicht.")
+        if resp.status_code in (401, 403):
+            raise DeviceError("openHAB verweigert den Zugriff (API-Token prüfen).")
+        if resp.status_code != 200:
+            raise DeviceError(f"openHAB antwortet mit Fehler {resp.status_code}.")
+        try:
+            return parse_state(resp.json().get("state"))
+        except (ValueError, AttributeError) as exc:
+            raise DeviceError("Unerwartete Antwort von openHAB.") from exc
+
+    async def send(self, spec: DeviceSpec, command: str) -> None:
+        assert self._client is not None
+        payload = translate_command(spec, command)
+        try:
+            resp = await self._client.post(
+                f"/rest/items/{quote(spec.item, safe='')}",
+                content=payload.encode(),
+                headers={"Content-Type": "text/plain"},
+            )
+        except httpx.HTTPError as exc:
+            raise DeviceError("openHAB ist nicht erreichbar, nichts gesendet.") from exc
+        if resp.status_code == 404:
+            raise DeviceError(f"Das Item '{spec.item}' gibt es in openHAB nicht.")
+        if resp.status_code in (401, 403):
+            raise DeviceError("openHAB verweigert den Zugriff (API-Token prüfen).")
+        if resp.status_code >= 400:
+            raise DeviceError(f"openHAB hat den Befehl abgelehnt (Fehler {resp.status_code}).")
+
+    # --- Hintergrund: Zustände und Änderungen ---
+
+    async def _run(self) -> None:
+        attempt = 0
+
+        def connected() -> None:
+            nonlocal attempt
+            attempt = 0
+
+        while True:
+            try:
+                await self._devices.refresh_all("openhab")
+                await self.listen_once(on_connected=connected)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("openHAB-Verbindung unterbrochen: %s", type(exc).__name__)
+                # Nur bei einem Fehler gelten die Geräte als offline; ein sauber beendeter
+                # Ereignisstrom führt nur zu einer neuen Verbindung.
+                await self._devices.set_offline("openhab")
+            await asyncio.sleep(self._backoff(attempt))
+            attempt = min(attempt + 1, 10)
+
+    async def listen_once(self, on_connected: Callable[[], None] | None = None) -> None:
+        """Hält eine SSE-Verbindung, bis sie endet oder fehlschlägt."""
+        assert self._client is not None
+        wanted = {s.item for s in self._devices.specs_for("openhab")}
+        if not wanted:
+            await asyncio.sleep(3600)  # keine Geräte freigegeben: nichts zu beobachten
+            return
+        async with self._client.stream(
+            "GET", "/rest/events", params={"topics": "openhab/items/*/statechanged"}
+        ) as resp:
+            if resp.status_code != 200:
+                raise DeviceError(f"openHAB-Ereignisstrom: Fehler {resp.status_code}")
+            if on_connected:
+                on_connected()
+            async for event in iter_sse(resp.aiter_lines()):
+                change = state_change(event)
+                if change and change[0] in wanted:
+                    await self._devices.on_state_change("openhab", change[0], change[1])

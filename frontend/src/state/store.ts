@@ -1,5 +1,12 @@
 import type { ConnectionStatus } from "../lib/socket";
-import type { Role, ServerEvent, StageItem, VoiceStateName } from "../protocol";
+import type {
+  ControlMode,
+  DeviceInfo,
+  Role,
+  ServerEvent,
+  StageItem,
+  VoiceStateName,
+} from "../protocol";
 
 export interface ChatItem {
   id: string;
@@ -20,6 +27,15 @@ export interface WidgetState {
   refreshable: boolean;
 }
 
+export interface PendingConfirm {
+  id: string;
+  device: string;
+  command: string;
+  summary: string;
+  expiresIn: number;
+  receivedAt: number;
+}
+
 export interface CatState {
   connection: ConnectionStatus;
   messages: ChatItem[];
@@ -27,6 +43,10 @@ export interface CatState {
   stage: StageItem[];
   stageIndex: number;
   widgets: Record<string, WidgetState>;
+  devices: DeviceInfo[];
+  control: ControlMode;
+  deviceError: string | null;
+  confirm: PendingConfirm | null;
   notice: string | null;
 }
 
@@ -34,7 +54,9 @@ export type Action =
   | { kind: "server"; event: ServerEvent }
   | { kind: "connection"; status: ConnectionStatus }
   | { kind: "stageGo"; index: number }
-  | { kind: "dismissNotice" };
+  | { kind: "dismissNotice" }
+  | { kind: "confirmClose" }
+  | { kind: "showDevices" };
 
 export const initialState: CatState = {
   connection: "connecting",
@@ -43,6 +65,10 @@ export const initialState: CatState = {
   stage: [],
   stageIndex: -1,
   widgets: {},
+  devices: [],
+  control: "readonly",
+  deviceError: null,
+  confirm: null,
   notice: null,
 };
 
@@ -108,6 +134,29 @@ function applyServerEvent(state: CatState, event: ServerEvent): CatState {
       };
     case "voice.state":
       return { ...state, voice: event.state };
+    case "device.list":
+      return { ...state, devices: event.devices, control: event.control, deviceError: event.error };
+    case "device.state":
+      return {
+        ...state,
+        devices: state.devices.map((d) =>
+          d.id === event.id ? { ...d, state: event.state, unit: event.unit, online: event.online } : d,
+        ),
+      };
+    case "confirm.request":
+      return {
+        ...state,
+        confirm: {
+          id: event.id,
+          device: event.device,
+          command: event.command,
+          summary: event.summary,
+          expiresIn: event.expires_in,
+          receivedAt: Date.now(),
+        },
+      };
+    case "confirm.resolved":
+      return state.confirm?.id === event.id ? { ...state, confirm: null } : state;
     case "error":
       return { ...state, notice: event.message };
   }
@@ -129,5 +178,20 @@ export function reducer(state: CatState, action: Action): CatState {
       };
     case "dismissNotice":
       return { ...state, notice: null };
+    case "confirmClose":
+      return { ...state, confirm: null };
+    case "showDevices": {
+      // Lokal geöffnetes Panel (ohne Server): zeigt immer den aktuellen Gerätestand.
+      const item: StageItem = {
+        id: `local-devices-${state.stage.length}`,
+        kind: "devices",
+        title: "Geräte",
+        content: "",
+        chart: null,
+        created_at: Date.now() / 1000,
+      };
+      const stage = [...state.stage, item];
+      return { ...state, stage, stageIndex: stage.length - 1 };
+    }
   }
 }

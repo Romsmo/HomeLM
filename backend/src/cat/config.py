@@ -40,6 +40,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CAT_ANTHROPIC_API_KEY"),
     )
 
+    # Gerätesteuerung. readonly = nur lesen (Standard), test = nur Geräte mit test: true,
+    # full = alle freigegebenen Geräte. Erst nach ausdrücklicher Freigabe auf full stellen.
+    device_control: Literal["readonly", "test", "full"] = "readonly"
+    # openHAB (Phase 4). Token optional (lokal ist die REST-API oft offen).
+    openhab_url: str = "http://host.docker.internal:8080"
+    openhab_token: SecretStr | None = None
+    # Home Assistant (nur Mocks, solange es keinen HA gibt)
+    ha_url: str = "http://homeassistant.local:8123"
+    ha_token: SecretStr | None = None
+
     # Plugins (kommagetrennt) und Widgets (Phase 3)
     plugins: str = "system,weather"
     system_interval_s: float = 3.0
@@ -48,6 +58,14 @@ class Settings(BaseSettings):
     weather_lon: float | None = None
     weather_name: str = ""
     weather_ttl_s: float = 600.0
+
+    @property
+    def devices_file(self) -> Path:
+        return self.data_dir / "config" / "devices.yaml"
+
+    @property
+    def audit_file(self) -> Path:
+        return self.data_dir / "audit.jsonl"
 
     @property
     def enabled_plugins(self) -> list[str]:

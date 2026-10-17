@@ -9,7 +9,7 @@ from cat import __version__, auth
 from cat.agent.responder import build_responder
 from cat.config import Settings, get_settings
 from cat.plugins.manager import PluginManager
-from cat.plugins.registry import build_plugins
+from cat.plugins.registry import PluginServices, build_plugins
 from cat.state import AppState
 from cat.ws import endpoint
 from cat.ws.protocol import WidgetUpdate
@@ -27,7 +27,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         state.widgets[update.id] = update
         await state.emit(update)
 
-    plugins = PluginManager(build_plugins(settings), settings, publish)
+    plugins = PluginManager(
+        build_plugins(settings, PluginServices(devices=state.devices)), settings, publish
+    )
     state.widget_refresher = plugins.refresh
     if settings.responder == "agent":
         state.responder = build_responder(state, extra_tools=plugins.tools())

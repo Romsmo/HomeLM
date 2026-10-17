@@ -116,3 +116,30 @@
 
 **Rollback**
 - `cd /srv/homelm && docker compose down` (ohne `-v`) stoppt Cat, nichts anderes ist betroffen. Image entfernen: `docker image rm homelm-backend`. Dateien in `/srv/homelm` löschen ist optional.
+
+## Phase 4: Geräte (openHAB, Home Assistant gegen Mocks)
+
+**Gebaut**
+- Gemeinsames Gerätemodell und **Allowlist** `data/config/devices.yaml` (nur dort aufgeführte Geräte existieren für Cat; fehlerhafte Datei = keine Geräte). Risikostufen mit festen Untergrenzen je Typ (Schlösser, Türen, Garagen immer `high`, nicht absenkbar). Dokumentation: `docs/devices.md`, Beispiel `docs/devices.example.yaml`.
+- **Steuerungsmodus** `CAT_DEVICE_CONTROL`: `readonly` (Standard), `test`, `full`. Prüfreihenfolge im Backend für Chat, Sprache und Panel gleich: Allowlist, Modus, Befehl, Bestätigung (nur `high`), erst dann das Backend.
+- **Bestätigung im Backend erzwungen** (`confirm.request`/`confirm.response`/`confirm.resolved`): einmalige IDs, Ablehnung, Timeout (60 s) und fehlende Oberfläche ergeben "nicht ausgeführt".
+- **Audit-Log** `data/audit.jsonl` für jeden Tool-Aufruf (auch Fehler und unbekannte Werkzeuge) und jeden Panel-Befehl, mit Maskierung und Kürzung.
+- Plugin `openhab` (REST lesen/senden, SSE für Änderungen, Wiederverbindung, offline-Markierung) und Plugin `homeassistant` (REST + WebSocket nach der aktuellen HA-Dokumentation, nur Mocks, nicht aktiv). Werkzeuge `list_devices`, `get_state`, `set_state`, `show_devices`.
+- Frontend: Geräte-Panel auf der Stage (Schalter, Dimmer-Regler, Rollladen, Thermostat, Schloss/Tür/Garage) mit Live-Zuständen, Geräte-Karte in der Widget-Spalte, Bestätigungsdialog (Fokus auf "Abbrechen", Escape lehnt ab, Ablauf lehnt ab).
+
+**Abnahme**
+- **Lesen gegen das echte openHAB: bestanden.** Lokal gestartetes Cat las die Zustände von 6 Test-Items vom Server (Licht, Dimmer, Rollo, Temperatur, Leistung), Leistungswerte änderten sich live per SSE (351,7 W, 352 W, 352,4 W).
+- **Steuern gesperrt: bestanden.** Ein am Panel vorbei per WebSocket gesendeter Befehl wurde im Modus `readonly` abgelehnt, das echte Licht blieb aus (per REST gegengeprüft), der Versuch steht im Audit-Log.
+- **"high" verlangt Bestätigung: bestanden (Tests).** Backend-Tests prüfen Zustimmung, Ablehnung, Timeout, fehlende Oberfläche, gefälschte und doppelte IDs; kein Pfad erreicht das Backend ohne Zustimmung.
+- **Nicht geprüft: Schalten einer Test-Lampe per Chat gegen echtes openHAB.** Das braucht Ihre Freigabe (Modus `test` und ein als `test: true` markiertes Gerät, siehe offene Punkte). Gegen den Fake-Server ist es getestet.
+- Tests: Backend 163, Frontend 71.
+
+**Gefundene und behobene Fehler**
+- Plugin markierte Geräte als offline, sobald ein SSE-Strom sauber endete (Flackern); jetzt nur noch bei Fehlern.
+- Rollladen-Skala: openHAB 0 % = offen, Home Assistant 0 % = zu. Cat meldet überall "Prozent geschlossen" und rechnet bei HA um.
+- openHAB-`Color`-Items liefern "H,S,B": Cat zeigt die Helligkeit.
+
+**Offene Punkte**
+- Entscheiden, welche Geräte Cat sehen darf (Vorschlag in `docs/devices.example.yaml`; auf dem Server liegt zunächst diese Auswahl harmloser Items, Modus `readonly`).
+- Für Phase-4-Abnahme "Test-Lampe per Chat": Testgerät nennen, Modus `test` freigeben.
+- Eine offene Rückfrage geht bei einem Verbindungsabbruch des Browsers verloren (der Server lehnt nach 60 s selbst ab, sicher).

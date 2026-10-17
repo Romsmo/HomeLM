@@ -2,6 +2,8 @@ import { useCat } from "../hooks/useCat";
 import Header from "./Header";
 import ChatPanel from "./ChatPanel";
 import Stage from "./Stage";
+import ConfirmDialog from "./devices/ConfirmDialog";
+import DevicesCard from "./devices/DevicesCard";
 import WidgetColumn from "./WidgetColumn";
 import { renderWidget } from "./widgets/renderWidget";
 
@@ -39,6 +41,11 @@ export default function Dashboard({
             widgets={state.widgets}
             renderWidget={(w) => renderWidget(w, (id) => send({ type: "widget.refresh", id }))}
           />
+          <DevicesCard
+            devices={state.devices}
+            control={state.control}
+            onOpen={() => dispatch({ kind: "showDevices" })}
+          />
         </div>
         <Stage
           voice={state.voice}
@@ -46,6 +53,10 @@ export default function Dashboard({
           index={state.stageIndex}
           onGo={(index) => dispatch({ kind: "stageGo", index })}
           onClear={() => send({ type: "stage.clear" })}
+          devices={state.devices}
+          control={state.control}
+          deviceError={state.deviceError}
+          onDeviceCommand={(id, command) => send({ type: "device.command", id, command })}
         />
         <div className="flex min-h-[26rem] flex-col md:min-h-0">
           <ChatPanel
@@ -57,6 +68,15 @@ export default function Dashboard({
           />
         </div>
       </main>
+      {state.confirm && (
+        <ConfirmDialog
+          confirm={state.confirm}
+          onAnswer={(approved) => {
+            send({ type: "confirm.response", id: state.confirm?.id ?? "", approved });
+            dispatch({ kind: "confirmClose" });
+          }}
+        />
+      )}
     </div>
   );
 }

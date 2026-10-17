@@ -1,0 +1,48 @@
+# Beispiel-Allowlist. Kopieren nach data/config/devices.yaml und anpassen.
+# Erklärung: docs/devices.md
+devices:
+  - id: deckenlicht_marius
+    backend: openhab
+    item: Marius_ShellyPlus_1_Betrieb
+    name: Deckenlicht Marius
+    room: Marius
+    type: light
+    synonyms: [Licht Marius]
+
+  - id: terrassenlampen
+    backend: openhab
+    item: Aussenbeleuchtung_Helligkeit
+    name: Terrassenlampen
+    room: Terrasse
+    type: dimmer
+
+  - id: treppenrollo
+    backend: openhab
+    item: Rollo_Treppenhaus_Control
+    name: Treppenrollo
+    room: Treppenhaus
+    type: shutter
+
+  - id: aussentemperatur
+    backend: openhab
+    item: Weather_OWM_Temp_h78
+    name: Außentemperatur
+    room: Terrasse
+    type: sensor
+
+  - id: schuppen_leistung
+    backend: openhab
+    item: ShellyPlus_1PM_Schuppen_Stromverbrauch
+    name: Schuppen Leistung
+    room: Schuppen
+    type: sensor
+
+  # Schlösser, Türen und Garagen sind immer "high" (Bestätigung). Für openHAB braucht es
+  # eine ausdrückliche Befehlszuordnung, sonst sendet Cat nichts:
+  # - id: haustuer
+  #   backend: openhab
+  #   item: Haustuer_Schloss
+  #   name: Haustür
+  #   room: Flur
+  #   type: lock
+  #   command_map: {unlock: "OFF", lock: "ON"}

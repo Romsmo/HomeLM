@@ -9,6 +9,7 @@ from cat.llm.base import LLMError, TextDelta, ToolCall
 from cat.main import create_app
 from tests.conftest import PASSWORD
 from tests.fakes import FakeProvider
+from tests.helpers import drain_replay
 
 
 def client_with(provider: FakeProvider, settings: Settings) -> TestClient:
@@ -31,6 +32,9 @@ def recv_until(ws: Any, type_: str) -> list[dict[str, Any]]:
 
 
 def send(ws: Any, text: str) -> None:
+    if not getattr(ws, "_drained", False):
+        drain_replay(ws)
+        ws._drained = True
     ws.send_text(json.dumps({"type": "chat.message", "text": text}))
 
 
@@ -80,12 +84,17 @@ def test_stage_history_replayed_on_reconnect_and_clearable(settings: Settings) -
             send(ws, "liste")
             recv_until(ws, "chat.done")
         with c.websocket_connect("/ws") as ws:
-            replayed = [json.loads(ws.receive_text()) for _ in range(3)]
-            assert [e["type"] for e in replayed] == ["chat.message", "chat.message", "stage.show"]
+            replayed = drain_replay(ws)
+            assert [e["type"] for e in replayed] == [
+                "chat.message",
+                "chat.message",
+                "stage.show",
+                "device.list",
+            ]
             ws.send_text(json.dumps({"type": "stage.clear"}))
             assert json.loads(ws.receive_text())["type"] == "stage.clear"
         with c.websocket_connect("/ws") as ws:
-            types = [json.loads(ws.receive_text())["type"] for _ in range(2)]
+            types = [e["type"] for e in drain_replay(ws)]
             assert "stage.show" not in types
 
 

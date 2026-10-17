@@ -19,6 +19,7 @@ from cat.plugins.weather.wmo import wmo_label
 from cat.stage.store import StageStore
 from cat.ws.protocol import WidgetUpdate
 from tests.conftest import PASSWORD
+from tests.helpers import drain_replay
 
 
 class Recorder:
@@ -355,14 +356,19 @@ def test_weather_error_and_refresh_over_websocket() -> None:
     with TestClient(create_app(cfg)) as c:
         assert c.post("/api/login", json={"password": PASSWORD}).status_code == 200
         with c.websocket_connect("/ws") as ws:
-            first: dict[str, Any] = {}
-            for _ in range(10):
-                first = recv(ws)
-                if first["type"] == "widget.update" and first["status"] == "error":
-                    break
+            replay = drain_replay(ws)
+            widget = [e for e in replay if e["type"] == "widget.update"]
+            # Der Hintergrundabruf kann noch laufen: dann erst auf das Ergebnis warten.
+            first = widget[-1] if widget else {}
+            while first.get("status") != "error":
+                event = recv(ws)
+                if event["type"] == "widget.update":
+                    first = event
             assert first["error"] == NO_LOCATION and first["refreshable"] is True
             ws.send_text(json.dumps({"type": "widget.refresh", "id": "weather"}))
             again = recv(ws)
-            assert again["type"] == "widget.update" and again["id"] == "weather"
+            while again["type"] != "widget.update":
+                again = recv(ws)
+            assert again["id"] == "weather"
             ws.send_text(json.dumps({"type": "widget.refresh", "id": "system"}))
             assert recv(ws)["type"] == "error"
