@@ -99,6 +99,11 @@ def run_job(job: Path) -> dict[str, object]:
                 pass
             out, err = proc.communicate()
         exit_code = proc.returncode
+        # Nach jedem Auftrag die ganze Prozessgruppe beenden: nichts darf übrig bleiben.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     except OSError as exc:
         return {"ok": False, "error": f"Start fehlgeschlagen: {exc.strerror}", "images": []}
     return {

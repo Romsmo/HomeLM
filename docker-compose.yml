@@ -35,6 +35,9 @@ services:
     container_name: homelm-sandbox
     restart: unless-stopped
     network_mode: none
+    # PID 1 ist ein Init-Prozess, der verwaiste Kindprozesse einsammelt. Ohne ihn blieben sie als
+    # Zombies stehen und füllten das Prozesslimit dauerhaft (Fork-Bomben-Test, 2026-10-17).
+    init: true
     read_only: true
     user: "${CAT_UID:-10001}:${CAT_GID:-10001}"
     cap_drop: [ALL]
