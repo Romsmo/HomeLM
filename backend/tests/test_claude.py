@@ -13,6 +13,8 @@ from cat.claude.text import (
     build_prompt,
     chunk,
     is_explicit_request,
+    looks_like_refusal,
+    needs_claude,
     split_html,
     strip_footer,
 )
@@ -176,3 +178,52 @@ async def test_bridge_empty_text_is_an_error() -> None:
         return httpx.Response(200, json={"ok": True, "text": "  "})
 
     assert not (await bridge(handler).ask("q", "s")).ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Zeig mir eine animierte Uhr",
+        "Erstell eine HTML Seite für das Wetter",
+        "Zeichne einen Hund",
+        "Schreib mir ein Python Skript für Backups",
+        "Programmiere einen Wecker",
+    ],
+)
+def test_tasks_the_local_model_cannot_do_go_straight_to_claude(text: str) -> None:
+    assert needs_claude(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Mach das Licht an", "Wie wird das Wetter", "Schreib mir ein Gedicht", "Spiel Musik"],
+)
+def test_ordinary_requests_do_not_trigger_the_shortcut(text: str) -> None:
+    assert not needs_claude(text)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Ihr habt keine Animationen auf der Stage. Eine animierte Uhr kann ich nicht erstellen.",
+        "Das kann ich leider nicht.",
+        "Ich weiß es leider nicht genau.",
+        "Ich kann dir leider keine Auskunft geben.",
+        "Ich bin mir nicht sicher, ob das stimmt.",
+    ],
+)
+def test_refusals_are_recognized(answer: str) -> None:
+    assert looks_like_refusal(answer)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Es gibt heute keine Termine.",
+        "Morgens trinkst du Kaffee mit Hafermilch.",
+        "Das Licht ist an.",
+        "Eine Stunde hat 60 Minuten.",
+    ],
+)
+def test_normal_answers_are_not_refusals(answer: str) -> None:
+    assert not looks_like_refusal(answer)

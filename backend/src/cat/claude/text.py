@@ -47,6 +47,32 @@ def is_explicit_request(text: str) -> bool:
     return any(p.search(text) for p in _EXPLICIT)
 
 
+# Aufgaben, die das lokale Modell sicher nicht kann (kein show_html, kein Code-Schreiben auf
+# Niveau): gehen direkt an Claude, ohne dass das kleine Modell erst "kann ich nicht" sagt.
+_NEEDS_CLAUDE = re.compile(
+    r"\banimier\w*|\banimation\w*|\bhtml\b|\bweb-?(seite|site|app)\b|\bzeichne\w*"
+    r"|\bprogrammier\w+|\b(schreib\w*|erstell\w*|bau\w*)\b[^.!?\n]{0,30}"
+    r"\b(skript|script|programm|python|javascript|code)\b",
+    re.IGNORECASE,
+)
+# Das kleine Modell lehnt etwas ab oder gibt zu, es nicht zu wissen: dann soll Claude ran.
+_REFUSAL = re.compile(
+    r"\b(ich\s+)?(kann|könnte|vermag)\b[^.!?\n]{0,40}\b(leider\s+)?(nicht|keine?n?)\b"
+    r"|nicht in der lage|keine möglichkeit|weiß\s+(ich\s+)?(es\s+)?(leider\s+)?nicht"
+    r"|ich bin (mir\s+)?(da\s+)?nicht sicher|keine ahnung|leider (nicht|kein)",
+    re.IGNORECASE,
+)
+
+
+def needs_claude(text: str) -> bool:
+    return bool(_NEEDS_CLAUDE.search(text))
+
+
+def looks_like_refusal(answer: str) -> bool:
+    """Der Anfang einer lokalen Antwort klingt nach "kann ich nicht" / "weiß ich nicht"."""
+    return bool(_REFUSAL.search(answer))
+
+
 def strip_footer(text: str) -> str:
     return text.removesuffix(FOOTER_PREFIX).rstrip()
 

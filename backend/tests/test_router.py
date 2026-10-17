@@ -224,3 +224,44 @@ async def test_claude_prompt_includes_memory_notes(make) -> None:  # type: ignor
     await env.ask("Was mag mein Hund?")
     assert "Rex" in claude.prompts[0]
     assert "Gedächtnis" in claude.systems[0]
+
+
+async def test_refusal_from_local_model_is_replaced_by_claude(make) -> None:  # type: ignore[no-untyped-def]
+    claude = FakeClaude(ok("Hier die Uhr."))
+    env = make([TextDelta("Das kann ich leider nicht erstellen.")], claude=claude)
+    text = await env.ask("Wie funktioniert ein Quantencomputer in Bildern?")
+    assert text.startswith("Hier die Uhr.") and "kann ich leider nicht" not in text
+    (entry,) = [e for e in env.audit_lines() if e["tool"] == "claude_escalation"]
+    assert entry["params"]["reason"] == "refused"
+
+
+async def test_long_refusal_is_caught_before_it_is_shown(make) -> None:  # type: ignore[no-untyped-def]
+    refusal = "Das kann ich leider nicht. " + "Ich erkläre dir gern, warum das so ist. " * 8
+    claude = FakeClaude(ok("Claude weiß es."))
+    env = make([TextDelta(refusal[:100]), TextDelta(refusal[100:])], claude=claude)
+    text = await env.ask("Eine Frage ohne Schlüsselwort")
+    assert text.startswith("Claude weiß es.") and "leider nicht" not in text
+
+
+async def test_normal_long_answer_streams_through_untouched(make) -> None:  # type: ignore[no-untyped-def]
+    answer = "Ein Wort folgt dem anderen und alles ist in bester Ordnung. " * 6
+    claude = FakeClaude()
+    env = make([TextDelta(answer[:150]), TextDelta(answer[150:])], claude=claude)
+    assert await env.ask("Erzähl mir etwas") == answer
+    assert claude.prompts == []
+
+
+async def test_refusal_stands_when_claude_is_blocked(make) -> None:  # type: ignore[no-untyped-def]
+    claude = FakeClaude()
+    env = make([TextDelta("Das kann ich leider nicht.")], claude=claude, limit=0)
+    assert await env.ask("Was ist los?") == "Das kann ich leider nicht."
+    assert claude.prompts == []
+
+
+async def test_tasks_the_local_model_cannot_do_skip_it_entirely(make) -> None:  # type: ignore[no-untyped-def]
+    claude = FakeClaude(ok("Hier ist deine Uhr."))
+    env = make(claude=claude)
+    text = await env.ask("Zeig mir eine animierte Uhr")
+    assert text.startswith("Hier ist deine Uhr.") and env.provider.calls == []
+    (entry,) = [e for e in env.audit_lines() if e["tool"] == "claude_escalation"]
+    assert entry["params"]["reason"] == "task"

@@ -4,7 +4,9 @@ Das lokale Modell (Ollama) beantwortet alles selbst. Claude (über die Brücke u
 Nutzers) kommt nur ins Spiel, wenn
 
 - das lokale Modell `ask_claude` aufruft ("das kann ich nicht sicher"),
-- der Nutzer ausdrücklich Claude verlangt ("frag Claude ..."),
+- der Nutzer ausdrücklich Claude verlangt ("frag Claude ...") oder etwas will, das das lokale
+  Modell sicher nicht kann (Animationen, HTML, Code schreiben),
+- die ersten Worte der lokalen Antwort nach "kann ich nicht" / "weiß ich nicht" klingen,
 - das lokale Modell ausfällt, zu viele Schritte braucht oder nichts antwortet.
 
 Der Fast-Path (Gerätebefehle) läuft davor in `dialog.py` und fragt nie Claude. Jede Frage an
@@ -26,6 +28,8 @@ from cat.claude.text import (
     build_prompt,
     chunk,
     is_explicit_request,
+    looks_like_refusal,
+    needs_claude,
     split_html,
 )
 from cat.llm.base import LLMError
@@ -40,6 +44,8 @@ SPOKEN_HINT = (
     "Diese Antwort wird laut vorgelesen: höchstens 1 bis 2 kurze Sätze, kein Markdown, keine "
     "Aufzählungen, keine Sonderzeichen. Stelle bei Bedarf genau eine kurze Rückfrage."
 )
+# So viele Zeichen der lokalen Antwort werden zurückgehalten, um eine Absage zu erkennen.
+HEAD_CHARS = 200
 # Wie lange Claude nach einem Fehler ruht (Sekunden).
 BLOCK_LIMIT_S = 30 * 60
 BLOCK_AUTH_S = 60 * 60
@@ -90,10 +96,17 @@ class RoutedResponder:
         self._claude = claude
         self._budget = budget
 
+    def _available(self) -> bool:
+        return self._claude is not None and self._budget is not None and not self._budget.blocked()
+
     async def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]:
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         if self._claude and is_explicit_request(question):
             async for part in self._escalate(history, Escalation("explicit"), spoken):
+                yield part
+            return
+        if self._available() and needs_claude(question):
+            async for part in self._escalate(history, Escalation("task"), spoken):
                 yield part
             return
 
@@ -104,10 +117,32 @@ class RoutedResponder:
         )
         messages = to_llm_messages([(m.role, m.text) for m in history])
         shown = False
+        head = ""  # Anfang der Antwort, solange noch nicht klar ist, ob es eine Absage ist
+        deciding = self._available()
+        stream = self._agent.run(messages, ctx, system_extra=extra)
         try:
-            async for delta in self._agent.run(messages, ctx, system_extra=extra):
-                shown = shown or bool(delta.strip())
-                yield delta
+            async for delta in stream:
+                if not deciding:
+                    shown = shown or bool(delta.strip())
+                    yield delta
+                    continue
+                head += delta
+                if len(head) < HEAD_CHARS:
+                    continue
+                deciding = False
+                if looks_like_refusal(head):
+                    break  # Absage: Claude übernimmt, der Text wird nicht gezeigt
+                shown = True
+                yield head
+            else:
+                if deciding and head.strip():
+                    deciding = False
+                    if not looks_like_refusal(head):
+                        shown = True
+                        yield head
+                    else:
+                        head = ""  # Absage verworfen
+                        ctx.escalation = ctx.escalation or Escalation("refused")
         except LLMError as exc:
             if self._claude and not shown:
                 log.warning("Lokales Modell ausgefallen, Claude übernimmt: %s", exc)
@@ -116,7 +151,11 @@ class RoutedResponder:
                 return
             yield f"Das hat leider nicht geklappt: {exc}"
             return
+        finally:
+            await stream.aclose()
 
+        if not deciding and not shown and head and looks_like_refusal(head):
+            ctx.escalation = ctx.escalation or Escalation("refused")
         escalation = ctx.escalation or (None if shown else Escalation("empty"))
         if escalation is None:
             return
