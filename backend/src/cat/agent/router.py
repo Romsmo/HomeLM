@@ -121,6 +121,7 @@ class RoutedResponder:
     ) -> AsyncIterator[str]:
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         self._last_use = time.monotonic()
+        t0 = time.perf_counter()
         previous = self._state.devices.last_device
         context = [(m.role, m.text) for m in history[:-1]][-4:]
         if self._claude and is_explicit_request(question):
@@ -151,6 +152,7 @@ class RoutedResponder:
         shown = False
         head = ""  # Anfang der Antwort, solange noch nicht klar ist, ob es eine Absage ist
         deciding = self._available()
+        t1 = time.perf_counter()
         stream = self._agent.run(messages, ctx, system_extra=extra)
         try:
             async for delta in stream:
@@ -186,11 +188,18 @@ class RoutedResponder:
         finally:
             await stream.aclose()
 
+        t2 = time.perf_counter()
         if not deciding and not shown and head and looks_like_refusal(head):
             ctx.escalation = ctx.escalation or Escalation("refused")
         escalation = ctx.escalation or (None if shown else Escalation("empty"))
         if escalation is None:
             await self._state.learn_from(question, ctx.trace, room, previous, context)
+            log.info(
+                "Router: vorbereiten %.2f s, Agent %.1f s, Lernen %.2f s",
+                t1 - t0,
+                t2 - t1,
+                time.perf_counter() - t2,
+            )
             return
         if shown:
             yield "\n\n"
