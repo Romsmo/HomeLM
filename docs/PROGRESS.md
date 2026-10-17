@@ -100,3 +100,19 @@
 **Offene Punkte**
 - `.env` auf dem Server anlegen: `CAT_PASSWORD`, `CAT_SESSION_SECRET`, `ANTHROPIC_API_KEY`, Wetter-Koordinaten.
 - Noch nicht umgesetzt (brauchen Server bzw. Freigaben): Server-Inventar (Schritt 2), Umsetzungsplan mit Freigabe (Schritt 3), Deployment nach `/srv/homelm`, Caddy-Route, Phase 4 (openHAB, braucht Adresse und Token) ff.
+
+## Deployment Phase 0-3 auf dem Server (2026-10-17)
+
+**Gemacht**
+- Der Nutzer hat `catscastle` selbst zur Gruppe `docker` hinzugefügt und `/srv/homelm` angelegt. Inventar mit Docker-Daten: `docs/server-inventory.md`.
+- Repo-Stand per `git archive | tar` nach `/srv/homelm` kopiert (ohne `.git`, ohne lokale Dateien). Image **auf dem Server** gebaut (`nice -n 19 ionice -c3`, ca. 2 Minuten, Image 630 MB), weil Docker Desktop auf dem PC die Engine nicht startete. Stack `homelm` mit einem Container `homelm-backend`, `mem_limit 768m`, `cpus 1.0`, Container-Benutzer 1000:1000 (Besitzer von `./data`).
+- `/srv/homelm/.env` (Rechte 600) mit Bindung `192.168.0.10:8090`, zufällig erzeugtem `CAT_SESSION_SECRET` (nie angezeigt), Plugins `system,weather`.
+
+**Abnahme: bestanden, mit Einschränkung**
+- `/health` vom PC (LAN) erreichbar, `/api/me` ohne Login 401, Login ohne konfiguriertes Passwort 503, `ss` zeigt nur `192.168.0.10:8090`, Docker-Mapping `8000/tcp -> 192.168.0.10:8090`. Cat hat keine Caddy-Route und ist damit nicht über 80/443 erreichbar.
+- Andere Dienste unverändert: gleiche Container wie vorher plus `homelm-backend`; Nextcloud (302), Trafficnetwork (200), Portainer aus dem LAN (200), openHAB (200). Cat im Leerlauf ca. 50 MiB; Server frei 5,0 GB, Last ca. 0,9 direkt nach dem Start.
+- **Nicht geprüft:** Erreichbarkeit "von außen". Dafür fehlt ein Standpunkt außerhalb des Hauses. Cat lauscht nur auf der LAN-Adresse und hat keine Caddy-Route; ob der Router Port 8090 weiterleitet, sollte der Nutzer kurz in der Router-Oberfläche prüfen (keine Weiterleitung nötig und keine eingerichtet, soweit bekannt).
+- **Noch offen für Login/Chat:** `CAT_PASSWORD` und `ANTHROPIC_API_KEY` in `/srv/homelm/.env` (als Kommentarzeilen vorbereitet), Wetter-Koordinaten, danach `docker compose up -d --no-build`.
+
+**Rollback**
+- `cd /srv/homelm && docker compose down` (ohne `-v`) stoppt Cat, nichts anderes ist betroffen. Image entfernen: `docker image rm homelm-backend`. Dateien in `/srv/homelm` löschen ist optional.
