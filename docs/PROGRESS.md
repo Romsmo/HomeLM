@@ -392,3 +392,35 @@ Befund aus dem Test des Nutzers: "Mach es wieder aus" ergab "Okay, Deckenlicht R
 - Der Tausch hat einen Preis: Anfragen, die noch nicht gelernt sind, brauchen das Modell (5 bis 60 s), vorher waren die häufigsten Befehle sofort da. Das ist die ausdrückliche Entscheidung des Nutzers.
 
 **Live-Nachweis (2026-10-17, Server):** "Schalte Deckenlicht Roman an" (Modell erkannte: schon an), danach "Mach es wieder aus": `set_state off` im Audit-Log, openHAB-Zustand OFF (das war der gemeldete Fehler). Dieselbe Frage "Ist das Deckenlicht Roman an?" dreimal: 24 s, 34 s (hier gelernt, als Vorlage `ist das {dev} an`), dann **0,0 s** über den gelernten Kurzbefehl. Dabei lernte Cat anfangs fälschlich "mach es wieder aus" (das "es" hing vom Gespräch ab, `previous_device` reichte nicht, weil es nach einem Neustart leer war): behoben durch die Prüfung, ob das Gerät im letzten Gesprächsverlauf genannt oder angeboten wurde (+4 Tests), der Testeintrag ist gelöscht. Beim Testen habe ich das Deckenlicht von Roman kurz an- und ausgeschaltet.
+
+## Phase 16: Antworten so schnell wie möglich (2026-10-17)
+
+Auftrag des Nutzers: das System so weit wie möglich beschleunigen. Gemessen wird immer über das laufende Cat (`scripts/chat_probe.py`, `/ws`), der Zeitlog je Anfrage steht im Backend-Log (`Zug:`, `Router:`, `Dialog:`).
+
+**Wo die Zeit steckte (Messung):** nicht im Netz, nicht in der Datenbank oder im Gedächtnis (0,001 s), sondern im Modell: auf dieser CPU kostet jedes Prompt-Token Zeit und jedes Ausgabe-Token 0,14 s. Dazu kamen **unsichtbare Zusatzrunden**: Antwortete das Modell ohne Werkzeug ("Okay, das Licht ist aus"), lief die Korrektur als zweiter Modelllauf (+4 bis 7 s), und ein falsches `get_state` bei einem Befehl kostete einen ganzen Schritt.
+
+**Geändert**
+- **Kleinerer, gleichbleibender Prompt:** nur 7 Werkzeuge mit Kurzbeschreibungen für das lokale Modell (Systemprompt plus Werkzeuge 2618 auf ca. 1100 Token), Parameterbeschreibungen entfernt, veränderlicher Kontext in der Nutzernachricht (Ollama behält so den Anfang im Cache). Prompt mit zwei Beispielen (Befehl gegen Frage).
+- **Fertige Antworten ohne zweiten Modelllauf:** `set_state`, `get_state` (bei Fragen) und `list_devices` mit Zustandsfilter liefern ihren Antworttext selbst ("Okay, Deckenlicht Roman ist aus."); der Agent gibt ihn direkt aus. Neu: `list_devices(query, state=an|aus|offen|zu)` filtert im Code, "Welche Rollos sind offen?" braucht dadurch nur noch einen Modellschritt (vorher 26 bis 40 s, jetzt 5 bis 11 s). Lange Listen sind kurz (`Name (Raum): Zustand`, Rollläden im Klartext "offen/zu").
+- **Abfragen werden sofort gelernt** (Befehle weiter nach zweimal); Befehle, die das Modell fälschlich mit `get_state` beantwortet hat, werden nicht als Frage gelernt (`is_question`, Fragezeichen oder Fragewort am Anfang).
+- **Threads und Speicher:** 5 Threads (`cpus: 5.0`, `cpu_shares: 256`), Modell 60 min im RAM, kürzere Sprechpause (`CAT_VAD_SILENCE_S=1.1`).
+- **Weniger Umwege:** Geräte-Runden (Befehle, Abfragen, Kurzbefehle) bleiben aus dem Verlauf des lokalen Modells (`ChatMessage.tooled`): Das Modell ahmte sonst die früheren Antworten "Okay, X ist aus." nach, statt `set_state` aufzurufen. Ein Befehl gilt erst nach `set_state` als erledigt (kündigt das Modell nur an, "Ich schalte es aus", folgt eine Korrektur). Schreibt das Modell einen Aufruf als Text (`get_state(device="...")`), wird er trotzdem ausgeführt.
+- **Sicherheit gewonnen:** Sagt der Nutzer "aus" und das Modell sendet `on` (oder umgekehrt), wird nichts gesendet, das Modell bekommt eine Korrektur (`power_conflict`). Das ist auf dem Server passiert ("Mach das Deckenlicht von Roman aus" schaltete an). Gerätebezug (Wörter aus Gerätenamen, Räumen, Typen) verlangt ein Werkzeug, sonst wird die Antwort nicht gezeigt. Geräte-Suche findet gleiche Wörter in anderer Reihenfolge ("Rollos Roman" = "Romans Rollo").
+
+**Messung (Server, warm, eine Anfrage nach der anderen)**
+
+| Anfrage | vorher | jetzt |
+|---|---|---|
+| Einfache Frage ("Wie spät ist es?") | 16,8 s | 3 bis 4 s |
+| Zustand eines Geräts | 17 s | 4 bis 6 s, gelernt 0,0 s |
+| Befehl (ungelernt, direkter Aufruf) | 11 bis 17 s | 7 s (mit Umweg 12 bis 19 s) |
+| Sammelfrage "Welche Rollos sind offen?" | 26 bis 40 s | 5 bis 11 s |
+| Gelernter Kurzbefehl | 0,0 s | 0,0 s |
+
+**Abnahme:** Backend 464 Tests (+13 in `tests/test_speed.py`), ruff sauber. Gegenprobe auf dem Server nach jedem Schritt; Ressourcen: Ollama 2,7 GiB, Backend 0,8 GiB, Nextcloud unberührt.
+
+**Grenzen / offen**
+- Der Boden liegt beim Modell: ca. 4 s für einen Werkzeugaufruf plus ca. 3 s Ausgabe, solange es ein 4B-Modell auf der CPU ist. Schneller ginge es nur mit RAM-/CPU-Upgrade oder einem kleineren Modell (schwächere Werkzeugwahl, nicht getestet).
+- Das Modell wählt bei Befehlen noch gelegentlich zuerst `get_state` oder erfindet eine Antwort (Korrekturrunde, +5 bis 7 s). Wiederholte Befehle werden gelernt und laufen dann in Millisekunden.
+- Beim Testen habe ich das Deckenlicht von Roman mehrmals geschaltet. "Sprachverbindung gestört" (Sprach-WebSocket im Browser): weiter ohne bekannte Ursache, Fehlertext des Nutzers steht aus.
+- Rollback: `git revert` der Commits dieser Phase; Daten (`learned.json`) bleiben kompatibel. Die Entfernung von `mach das deckenlicht von roman an` aus `data/learned.json` (Fehllernen) war ein Einzeleingriff, Sicherung nicht nötig (Eintrag fehlerhaft).
