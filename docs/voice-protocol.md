@@ -13,7 +13,7 @@ WebSocket für Mikrofon-Audio rein und Sprachausgabe raus. Genutzt vom Browser u
 | Art | Inhalt |
 |---|---|
 | Binär | Mikrofon-Audio, 16 000 Hz. Beliebige Blockgröße bis 64 KiB (üblich: 1024 Bytes = 512 Abtastwerte = 32 ms). Größere Blöcke werden mit `error` abgelehnt. |
-| Text (JSON) | `{"type": "hello", "room": "Küche"}`: optional, nur Browser: setzt den Raum des Sprechers (Standardraum für den Fast-Path, "Licht an" meint dann die Küche). Bei Satelliten wird `hello` (z. B. mit `device_id`) angenommen, der Raum aber aus der Registrierung genommen. |
+| Text (JSON) | `{"type": "hello", "room": "Küche"}`: optional, nur Browser: setzt den Raum des Sprechers (Kontext für das Modell und für gelernte Kurzbefehle, "Licht an" meint dann die Küche). Bei Satelliten wird `hello` (z. B. mit `device_id`) angenommen, der Raum aber aus der Registrierung genommen. |
 
 ## Server an Client
 

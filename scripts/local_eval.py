@@ -85,7 +85,7 @@ async def main() -> None:
         tools = [json.loads(line) for line in lines[audit_seen:]]
         audit_seen = len(lines)
         names = ", ".join(
-            f"{t['tool']}{'' if t['ok'] else ' (Fehler)'}" for t in tools if t["tool"] != "fastpath"
+            f"{t['tool']}{'' if t['ok'] else ' (Fehler)'}" for t in tools if t["tool"] != "learned_shortcut"
         )
         say(f"\n> {question}")
         say(f"  erstes Wort {first if first is None else round(first, 1)} s, gesamt {total:.1f} s")

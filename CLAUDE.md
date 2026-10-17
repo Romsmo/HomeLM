@@ -125,7 +125,7 @@ docs/            # cat-plan.md, phase-prompts.md, PROGRESS.md, server-inventory.
 
 - Jedes Plugin liegt in `backend/src/cat/plugins/<name>/` und implementiert `plugins/base.py` (`start`, `stop`, `tools`, `widgets`, `intents`). Tools haben ein JSON-Schema, eine kurze deutsche Beschreibung und eine Risikostufe. openHAB und Home Assistant liefern Geräte im gemeinsamen Format (Name, Raum, Typ, Zustand, Risikostufe).
 - Satellit sendet 16 kHz, 16 Bit, mono PCM per WebSocket, der Server antwortet mit TTS-Chunks. Sprachantworten: 1-2 Sätze, kein Markdown.
-- Fast-Path-Intents laufen vor dem LLM und müssen ohne Internet funktionieren.
+- Gelernte Kurzbefehle (`docs/learning.md`) laufen vor dem LLM und müssen ohne Internet funktionieren. Es gibt keine vorgefertigten Befehlssätze: Cat lernt aus wiederholten Anfragen (Anweisung des Nutzers, 2026-10-17).
 
 ## 11. Stil
 

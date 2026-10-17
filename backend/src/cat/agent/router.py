@@ -9,8 +9,8 @@ Nutzers) kommt nur ins Spiel, wenn
 - die ersten Worte der lokalen Antwort nach "kann ich nicht" / "weiß ich nicht" klingen,
 - das lokale Modell ausfällt, zu viele Schritte braucht oder nichts antwortet.
 
-Der Fast-Path (Gerätebefehle) läuft davor in `dialog.py` und fragt nie Claude. Jede Frage an
-Claude steht im Audit-Log und zählt gegen das Tageslimit.
+Gelernte Kurzbefehle (intents/learned.py) laufen davor in `dialog.py` und fragen nie Claude.
+Jede Frage an Claude steht im Audit-Log und zählt gegen das Tageslimit.
 """
 
 import asyncio
@@ -51,6 +51,14 @@ HEAD_CHARS = 120
 BLOCK_LIMIT_S = 30 * 60
 BLOCK_AUTH_S = 60 * 60
 BLOCK_DOWN_S = 60
+
+
+def room_hint(room: str) -> str:
+    """Ein Satellit oder Raumgerät spricht: "das Licht" ohne Raumangabe meint diesen Raum."""
+    return (
+        f'Der Nutzer spricht gerade im Raum "{room}". Geräte ohne Raumangabe ("das Licht", '
+        f'"der Rollladen") meinen diesen Raum.'
+    )
 
 
 def build_ask_claude_tool() -> Tool:
@@ -108,9 +116,12 @@ class RoutedResponder:
     def _available(self) -> bool:
         return self._claude is not None and self._budget is not None and not self._budget.blocked()
 
-    async def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]:
+    async def reply(
+        self, history: list[ChatMessage], spoken: bool = False, room: str | None = None
+    ) -> AsyncIterator[str]:
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         self._last_use = time.monotonic()
+        previous = self._state.devices.last_device
         if self._claude and is_explicit_request(question):
             async for part in self._escalate(history, Escalation("explicit"), spoken):
                 yield part
@@ -122,8 +133,17 @@ class RoutedResponder:
 
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         memory = await asyncio.to_thread(self._state.memory.context_for, question)
+        hint = self._state.devices.last_device_hint()
         extra = "\n\n".join(
-            p for p in (build_context(), memory, SPOKEN_HINT if spoken else "") if p
+            p
+            for p in (
+                build_context(),
+                room_hint(room) if room else "",
+                hint,
+                memory,
+                SPOKEN_HINT if spoken else "",
+            )
+            if p
         )
         messages = to_llm_messages([(m.role, m.text) for m in history])
         shown = False
@@ -168,6 +188,7 @@ class RoutedResponder:
             ctx.escalation = ctx.escalation or Escalation("refused")
         escalation = ctx.escalation or (None if shown else Escalation("empty"))
         if escalation is None:
+            await self._state.learn_from(question, ctx.trace, room, previous)
             return
         if shown:
             yield "\n\n"

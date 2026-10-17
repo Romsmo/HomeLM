@@ -2,13 +2,32 @@ import json
 import logging
 from collections.abc import AsyncIterator, Callable
 
-from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry
+from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
 from cat.audit import AuditLog
+from cat.intents.claims import claims_action
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
 
 LIMIT_NOTICE = "(Ich breche hier ab: zu viele Werkzeugschritte für eine Antwort.)"
+# Werkzeuge, mit denen eine Aussage über Geräte belegt wird.
+DEVICE_TOOLS = frozenset({"set_state", "get_state", "list_devices"})
+# So viele Zeichen einer Antwort werden zurückgehalten, bis klar ist, dass sie keine unbelegte
+# Erfolgsmeldung ("Okay, das Licht ist aus") ist, oder bis der erste Satz zu Ende ist.
+HOLD_CHARS = 120
+CORRECTION = (
+    "Hinweis des Systems: Du hast kein Werkzeug aufgerufen, deshalb ist nichts passiert und "
+    "deine Antwort stimmt nicht. Rufe jetzt das passende Werkzeug auf (set_state zum Schalten, "
+    "get_state oder list_devices zum Nachsehen) oder sag ehrlich, dass du es nicht kannst."
+)
+UNVERIFIED = (
+    "Das habe ich nicht ausgeführt, weil ich dafür kein Gerät angesprochen habe. "
+    "Bitte sag es noch einmal genauer, zum Beispiel mit dem Namen des Geräts."
+)
+
+
+def _sentence_end(text: str) -> bool:
+    return text.rstrip().endswith((".", "!", "?", "\n"))
 
 
 class Agent:
@@ -51,19 +70,57 @@ class Agent:
         elif system_extra:
             system += f"\n\n{system_extra}"
 
+        corrections = 0
+        guard = self._registry.get("set_state") is not None
         for _ in range(self._max_steps):
             step_text: list[str] = []
             calls: list[ToolCall] = []
-            async for event in self._provider.stream(system, messages, schemas):
-                if isinstance(event, TextDelta):
-                    if not step_text and wrote_text:
-                        yield "\n\n"  # Text nach einem Werkzeugschritt als neuer Absatz
-                    step_text.append(event.text)
-                    yield event.text
-                else:
-                    calls.append(event)
+            held: list[str] = []
+            started = False  # in diesem Schritt schon Text ausgegeben?
+            # Unbelegte Behauptungen über Geräte abfangen, solange noch kein Gerätewerkzeug lief.
+            hold = guard and not any(t.tool in DEVICE_TOOLS for t in ctx.trace)
 
-            if step_text:
+            async for event in self._provider.stream(system, messages, schemas):
+                if not isinstance(event, TextDelta):
+                    calls.append(event)
+                    continue
+                step_text.append(event.text)
+                if hold:
+                    held.append(event.text)
+                    joined = "".join(held)
+                    if claims_action(joined):
+                        continue  # erst am Ende des Schritts entscheiden (kommt noch ein Werkzeug?)
+                    if len(joined) < HOLD_CHARS and not _sentence_end(joined):
+                        continue
+                    hold = False
+                    if wrote_text and not started:
+                        yield "\n\n"  # Text nach einem Werkzeugschritt als neuer Absatz
+                    started = True
+                    yield joined
+                    held.clear()
+                    continue
+                if wrote_text and not started:
+                    yield "\n\n"
+                started = True
+                yield event.text
+
+            if held:
+                joined = "".join(held)
+                if claims_action(joined) and not calls:
+                    # "Okay, das Licht ist aus" ohne Werkzeugaufruf: nichts davon zeigen.
+                    if corrections == 0:
+                        corrections += 1
+                        messages.append({"role": "assistant", "content": joined})
+                        messages.append({"role": "user", "content": CORRECTION})
+                        continue
+                    yield ("\n\n" if wrote_text else "") + UNVERIFIED
+                    return
+                if wrote_text and not started:
+                    yield "\n\n"
+                started = True
+                yield joined
+
+            if step_text and started:
                 wrote_text = True
             if not calls:
                 return
@@ -91,6 +148,7 @@ class Agent:
     async def _execute(self, call: ToolCall, ctx: ToolContext) -> str:
         """Führt ein Werkzeug aus und protokolliert jeden Aufruf (auch Fehlschläge)."""
         result, ok = await self._run_tool(call, ctx)
+        ctx.trace.append(ToolTrace(call.name, call.arguments or {}, ok, result))
         if self._audit is not None:
             await self._audit.record(call.name, call.arguments, result, ok=ok, source="agent")
         return result

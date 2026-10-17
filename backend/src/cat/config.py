@@ -97,8 +97,9 @@ class Settings(BaseSettings):
     tts_voice: str = "de_DE-thorsten-medium"
     vad_silence_s: float = 1.5  # Pause bis zum Ende der Äußerung
     voice_nice: int = 10  # Rechenthreads mit niedriger Priorität, Nextcloud und Co. haben Vorrang
-    # Fast-Path: Gerätebefehle ohne LLM (Phase 5). Abschaltbar zum Vergleichen.
-    fastpath: bool = True
+    # Lernen aus Wiederholungen (intents/learned.py): Kurzbefehle ohne Sprachmodell.
+    learn: bool = True
+    learn_after: int = 2  # so oft muss dieselbe Formulierung gleich gelöst werden
     # openHAB (Phase 4). Token optional (lokal ist die REST-API oft offen).
     openhab_url: str = "http://host.docker.internal:8080"
     openhab_token: SecretStr | None = None
@@ -144,8 +145,8 @@ class Settings(BaseSettings):
         return self.data_dir / "sessions"
 
     @property
-    def synonyms_file(self) -> Path:
-        return self.data_dir / "config" / "synonyms.yaml"
+    def learned_file(self) -> Path:
+        return self.data_dir / "learned.json"
 
     @property
     def devices_file(self) -> Path:

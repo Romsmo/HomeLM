@@ -189,7 +189,7 @@ def test_provider_state_is_announced_and_switches_visibly(tmp_path: Path) -> Non
         responder="echo",
         plugins="",
         data_dir=tmp_path,
-        fastpath=False,
+        learn=False,
         summarize_sessions=False,
         llm_model="anthropic/claude-haiku-5-5",
     )

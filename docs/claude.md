@@ -6,7 +6,7 @@ Cat beantwortet **alles selbst mit dem lokalen Modell** (Ollama auf dem Server, 
 Eingabe (Chat, Sprache, Satellit)
    |
    v
-Fast-Path (Gerätebefehle, ohne LLM, ohne Internet)  --- erledigt? ---> Antwort
+Gelernter Kurzbefehl (ohne LLM, ohne Internet)  --- bekannt? ---> Antwort
    |
    v
 Lokales Modell (Ollama, Werkzeuge: Geräte, Gedächtnis, Stage, Rechnen)  --- antwortet ---> Antwort
@@ -27,7 +27,7 @@ Claude-Brücke (Container, Claude Code CLI, Abo) --- Text (+ HTML für die Stage
 | Das lokale Modell fällt aus (Ollama aus, Zeitüberschreitung, Speichermangel), bevor es etwas gesagt hat | Ollama-Container gestoppt |
 | Das lokale Modell braucht zu viele Werkzeugschritte (4) oder sagt nichts | verheddert sich bei einer Aufgabe |
 
-**Nie** gefragt wird Claude für: Gerätebefehle des Fast-Path, einfache Fragen, Smart Home, Gedächtnis, Rechnen. Das Gerät-Risikomodell (Allowlist, Bestätigung bei Türen) bleibt unverändert im Backend: Claude kann **nichts steuern**, es liefert nur Text und HTML.
+**Nie** gefragt wird Claude für: bereits gelernte Kurzbefehle (docs/learning.md), einfache Fragen, Smart Home, Gedächtnis, Rechnen. Das Gerät-Risikomodell (Allowlist, Bestätigung bei Türen) bleibt unverändert im Backend: Claude kann **nichts steuern**, es liefert nur Text und HTML.
 
 Antworten von Claude erscheinen im Chat mit dem Zusatz *"Antwort von Claude"*, und der Kopf zeigt während der Anfrage **"Claude antwortet: sonnet"**. Gesprochene Antworten sind auf 1 bis 2 Sätze begrenzt. Enthält die Antwort einen ```html-Block, geht er (bereinigt) auf die Stage im Sandbox-iframe, nicht in den Chat.
 

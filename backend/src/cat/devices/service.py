@@ -14,7 +14,7 @@ from cat.devices.commands import DeviceError, describe_command, is_controllable,
 from cat.devices.confirm import ConfirmManager
 from cat.devices.discovery import DiscoverConfig
 from cat.devices.models import Control, DeviceInfo, DeviceSpec
-from cat.intents.text import fold
+from cat.intents.text import fold, tokenize
 from cat.ws.protocol import DeviceList, DeviceStateEvent, ServerEvent
 
 log = logging.getLogger("cat.devices")
@@ -59,6 +59,7 @@ class DeviceService:
         self._discovered: list[DeviceSpec] = []
         self._all: list[DeviceSpec] = []
         self._by_item: dict[tuple[str, str], list[DeviceSpec]] = {}
+        self.last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
         self._rebuild()
 
     def _rebuild(self) -> None:
@@ -122,7 +123,7 @@ class DeviceService:
 
     @property
     def listed_specs(self) -> list[DeviceSpec]:
-        """Die Geräte, die in Listen, Dashboard, Fast-Path und Sprachhinweisen erscheinen."""
+        """Die Geräte, die in Listen, Dashboard und Sprachhinweisen erscheinen."""
         return [s for s in self._all if s.listed]
 
     def specs_for(self, backend: str) -> list[DeviceSpec]:
@@ -225,6 +226,31 @@ class DeviceService:
         found.sort(key=lambda x: -x[0])
         return [i for _, i in found[:3]]
 
+    def resolve_exact(self, ref: str) -> DeviceSpec | None:
+        """Nur bei genau gleicher Bezeichnung (id, Name oder Synonym, ohne Groß-/Kleinschreibung,
+        Umlaute und Satzzeichen), nie unscharf. Für Gelerntes: lieber nichts als das falsche."""
+        if not ref:
+            return None
+        direct = [s for s in self._all if s.id == ref]
+        if len(direct) == 1:
+            return direct[0]
+        key = " ".join(tokenize(ref))
+        if not key:
+            return None
+        found = [
+            s
+            for s in self._all
+            if key in {" ".join(tokenize(n)) for n in (s.name, s.id.replace("_", " "), *s.synonyms)}
+        ]
+        return found[0] if len(found) == 1 else None
+
+    def last_device_hint(self) -> str:
+        """Für den Kontext des Modells: worauf sich "es" oder "das Licht" gerade bezieht."""
+        spec = next((s for s in self._all if s.id == self.last_device), None)
+        if spec is None:
+            return ""
+        return f"Zuletzt bedient oder abgefragt: {spec.name} ({spec.room}, id {spec.id})."
+
     def _resolve_loose(self, key: str) -> list[DeviceSpec]:
         """Gleiche Schreibweise ohne Umlaute, Groß-/Kleinschreibung und Unterstriche, sonst das
         eindeutig beste unscharfe Ergebnis (nie raten, wenn zwei fast gleich gut sind)."""
@@ -277,7 +303,9 @@ class DeviceService:
         await self._emit(self.list_event())
 
     async def get_state(self, ref: str) -> DeviceInfo:
-        return await self.refresh_one(self.resolve(ref))
+        spec = self.resolve(ref)
+        self.last_device = spec.id
+        return await self.refresh_one(spec)
 
     async def on_state_change(self, backend: str, item: str, raw: RawState) -> None:
         """Vom Backend bei Änderungen aufgerufen (SSE bzw. WebSocket)."""
@@ -309,6 +337,7 @@ class DeviceService:
         """
         spec = self.resolve(ref)
         command = normalize_command(spec, raw_command)
+        self.last_device = spec.id
         what = describe_command(spec, command)
 
         if self._control == "readonly":

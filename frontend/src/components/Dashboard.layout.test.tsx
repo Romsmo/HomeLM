@@ -225,3 +225,76 @@ describe("Arbeitsraum: Dateien ablegen", () => {
     expect(calls).toContainEqual({ url: "/api/files/Foto.png", method: "DELETE" });
   });
 });
+
+
+describe("Arbeitsraum: Gelerntes", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: "abc123",
+    phrase: "schalte {dev} an",
+    does: "{Gerät} (senden: on)",
+    active: true,
+    seen: 2,
+    needed: 2,
+    uses: 5,
+    ...over,
+  });
+
+  it("erklärt, wie Cat lernt, solange noch nichts gelernt ist", async () => {
+    setup();
+    expect(await screen.findByText(/merke ich sie mir und antworte künftig sofort/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Gelernt" })).toBeInTheDocument();
+  });
+
+  it("zeigt Gelerntes mit Nutzung und Fortschritt und vergisst es nach Rückfrage", async () => {
+    const calls: { url: string; method?: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, method: init?.method });
+        if (url === "/api/learned" && !init?.method) {
+          return new Response(JSON.stringify([row(), row({ id: "z9", phrase: "gute nacht", active: false, seen: 1, uses: 0 })]));
+        }
+        return new Response("[]");
+      }),
+    );
+    setup();
+    expect(await screen.findByText("„schalte {dev} an“")).toBeInTheDocument();
+    expect(screen.getByText(/5× genutzt/)).toBeInTheDocument();
+    expect(screen.getByText(/gesehen 1\/2/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "„schalte {dev} an“ vergessen" }));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false); // erst nachfragen
+    fireEvent.click(screen.getByRole("button", { name: "„schalte {dev} an“ wirklich vergessen" }));
+    expect(calls).toContainEqual({ url: "/api/learned/abc123", method: "DELETE" });
+  });
+
+  it("vergisst auf Wunsch alles auf einmal", async () => {
+    const calls: { url: string; method?: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, method: init?.method });
+        return new Response(url === "/api/learned" && !init?.method ? JSON.stringify([row()]) : "[]");
+      }),
+    );
+    setup();
+    await screen.findByText("„schalte {dev} an“");
+    fireEvent.click(screen.getByRole("button", { name: "Alles vergessen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sicher?" }));
+    expect(calls).toContainEqual({ url: "/api/learned", method: "DELETE" });
+  });
+
+  it("meldet einen Fehler beim Vergessen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === "DELETE") return new Response(JSON.stringify({ detail: "Das gibt es nicht (mehr)." }), { status: 404 });
+        return new Response(url === "/api/learned" ? JSON.stringify([row()]) : "[]");
+      }),
+    );
+    setup();
+    await screen.findByText("„schalte {dev} an“");
+    fireEvent.click(screen.getByRole("button", { name: "„schalte {dev} an“ vergessen" }));
+    fireEvent.click(screen.getByRole("button", { name: "„schalte {dev} an“ wirklich vergessen" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Das gibt es nicht (mehr).");
+  });
+});

@@ -18,6 +18,7 @@ export type ItemId =
   | "weather"
   | "devices"
   | "files"
+  | "learned"
   | "core"
   | "caption"
   | "stage";
@@ -31,6 +32,7 @@ export const ITEM_META: Record<ItemId, { label: string; hideable: boolean; fixed
   weather: { label: "Wetter", hideable: true },
   devices: { label: "Geräte", hideable: true },
   files: { label: "Dateien", hideable: true },
+  learned: { label: "Gelernt", hideable: true },
   core: { label: "Cat", hideable: false, fixed: true },
   caption: { label: "Sprache", hideable: false, fixed: true },
   stage: { label: "Stage", hideable: false },
@@ -42,7 +44,8 @@ export const ITEM_IDS = Object.keys(ITEM_META) as ItemId[];
 export const DEFAULT_RECTS: Record<ItemId, Rect> = {
   date: { x: 0.01, y: 0.02, w: 0.17, h: 0.28 },
   system: { x: 0.01, y: 0.32, w: 0.2, h: 0.38 },
-  uptime: { x: 0.01, y: 0.72, w: 0.2, h: 0.26 },
+  uptime: { x: 0.01, y: 0.72, w: 0.2, h: 0.12 },
+  learned: { x: 0.01, y: 0.85, w: 0.2, h: 0.13 },
   core: { x: 0.26, y: 0.03, w: 0.48, h: 0.75 },
   caption: { x: 0.26, y: 0.8, w: 0.48, h: 0.18 },
   clock: { x: 0.64, y: 0.03, w: 0.11, h: 0.18 },
@@ -104,7 +107,7 @@ export function defaultLayout(): LayoutState {
   return {
     rects: { ...DEFAULT_RECTS },
     // Cat unten, die Stage über allem, Widgets dazwischen.
-    order: ["core", "caption", "date", "clock", "system", "uptime", "weather", "devices", "files", "stage"],
+    order: ["core", "caption", "date", "clock", "system", "uptime", "weather", "devices", "files", "learned", "stage"],
     hidden: [],
   };
 }

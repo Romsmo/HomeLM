@@ -276,7 +276,7 @@ def make_app(tmp_path: Path) -> Any:
         responder="echo",
         plugins="",
         data_dir=tmp_path,
-        fastpath=False,
+        learn=False,
         summarize_sessions=False,
     )
     return create_app(settings)

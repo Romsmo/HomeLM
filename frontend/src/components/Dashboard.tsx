@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useCat } from "../hooks/useCat";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { useFiles } from "../hooks/useFiles";
+import { useLearned } from "../hooks/useLearned";
 import { useLayout } from "../hooks/useLayout";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useVoice } from "../hooks/useVoice";
@@ -15,6 +16,7 @@ import CanvasItem from "./hud/CanvasItem";
 import CatCore from "./hud/CatCore";
 import ChatOverlay from "./hud/ChatOverlay";
 import FilesPanel from "./hud/FilesPanel";
+import LearnedPanel from "./hud/LearnedPanel";
 import { HudPanel } from "./hud/Hud";
 import LayoutToolbar from "./hud/LayoutToolbar";
 import { ClockRing, DateRing } from "./hud/TimeWidgets";
@@ -43,6 +45,7 @@ export default function Dashboard({
   const wide = useMediaQuery("(min-width: 1024px)");
   const layout = useLayout();
   const files = useFiles(connected);
+  const learned = useLearned(connected, state.messages.length);
   const dragging = useFileDrop(files.upload);
   const canvas = useRef<HTMLDivElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -106,6 +109,15 @@ export default function Dashboard({
         onPick={files.upload}
         onShow={files.show}
         onDelete={files.remove}
+      />
+    ),
+    learned: (
+      <LearnedPanel
+        rows={learned.rows}
+        error={learned.error}
+        needed={2}
+        onForget={learned.forget}
+        onForgetAll={learned.forgetAll}
       />
     ),
     core: (
@@ -188,6 +200,7 @@ export default function Dashboard({
               <div className="min-h-[10rem]">{content.devices}</div>
               <div className="min-h-[10rem]">{content.files}</div>
               <div className="min-h-[6rem]">{content.uptime}</div>
+              <div className="min-h-[8rem]">{content.learned}</div>
             </div>
           </div>
         </main>

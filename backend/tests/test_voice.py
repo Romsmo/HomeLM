@@ -356,7 +356,7 @@ def voice_app(tmp_path: Path, voice: bool = True) -> Any:
         responder="echo",
         plugins="",
         data_dir=tmp_path,
-        fastpath=False,
+        learn=False,
         summarize_sessions=False,
         voice=False,
     )

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from cat import __version__, api_files, auth
+from cat import __version__, api_files, api_learned, auth
 from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
 from cat.llm.base import LLMProvider
@@ -107,6 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(api_files.router)
+    app.include_router(api_learned.router)
     app.include_router(endpoint.router)
     app.include_router(voice_ws.router)
 

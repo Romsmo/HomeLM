@@ -4,7 +4,13 @@ from collections.abc import AsyncIterator, Sequence
 
 from cat.agent.loop import Agent, to_llm_messages
 from cat.agent.prompt import build_local_prompt, build_system_prompt
-from cat.agent.router import ASK_CLAUDE, SPOKEN_HINT, RoutedResponder, build_ask_claude_tool
+from cat.agent.router import (
+    ASK_CLAUDE,
+    SPOKEN_HINT,
+    RoutedResponder,
+    build_ask_claude_tool,
+    room_hint,
+)
 from cat.agent.tools import Tool, ToolContext, ToolRegistry
 from cat.claude.bridge import ClaudeBridge
 from cat.claude.budget import ClaudeBudget
@@ -33,17 +39,23 @@ class AgentResponder:
         self._state = state
         self._agent = agent
 
-    async def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]:
+    async def reply(
+        self, history: list[ChatMessage], spoken: bool = False, room: str | None = None
+    ) -> AsyncIterator[str]:
         messages = to_llm_messages([(m.role, m.text) for m in history])
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
+        previous = self._state.devices.last_device
         # Relevante Erinnerungen vor der Antwort in den Prompt holen (FTS5, lokal, ohne LLM).
         extra = await asyncio.to_thread(self._state.memory.context_for, question)
+        if room:
+            extra = f"{room_hint(room)}\n\n{extra}".strip()
         if spoken:
             extra = f"{extra}\n\n{SPOKEN_HINT}".strip()
         try:
             async for delta in self._agent.run(messages, ctx, system_extra=extra):
                 yield delta
+            await self._state.learn_from(question, ctx.trace, room, previous)
         except LLMError as exc:
             # Verständliche Meldung statt Stacktrace; sie erscheint als Assistentennachricht.
             yield f"Das hat leider nicht geklappt: {exc}"

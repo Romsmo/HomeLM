@@ -1,6 +1,7 @@
 """Ende zu Ende: echter Server (uvicorn) + der echte Satelliten-Code mit simuliertem Audio."""
 
 import asyncio
+import json
 import socket
 import sys
 import threading
@@ -111,6 +112,17 @@ class LiveServer:
             ),
             encoding="utf-8",
         )
+        # "Mach das Licht an" ist je Raum gelernt: Der Satellit bestimmt, welches Licht gemeint ist.
+        learned = [
+            {
+                "key": f"{room}|mach das licht an",
+                "actions": [{"kind": "set", "device": device, "command": "on"}],
+                "count": 2,
+                "active": True,
+            }
+            for room, device in (("kueche", "kuechenlicht"), ("flur", "flurlicht"))
+        ]
+        (tmp_path / "learned.json").write_text(json.dumps({"shortcuts": learned}), encoding="utf-8")
         settings = Settings(
             _env_file=None,  # type: ignore[call-arg]
             password=PASSWORD,  # type: ignore[arg-type]
@@ -120,7 +132,7 @@ class LiveServer:
             plugins="",
             data_dir=tmp_path,
             device_control="full",
-            fastpath=True,
+            learn=True,
             summarize_sessions=False,
         )
         self.app = create_app(settings)

@@ -4,7 +4,7 @@ Seit dem Umbau "lokal zuerst" (`docs/claude.md`) ist das lokale Modell auf dem S
 
 ## Was ohne Internet immer funktioniert
 
-- **Fast-Path** (`docs/intents.md`): Licht, Rollläden, Heizung, Temperatur und Zustände über openHAB im LAN, ohne LLM.
+- **Gelernte Kurzbefehle** (`docs/learning.md`): Was Cat aus wiederholten Anfragen gelernt hat (Licht, Rollläden, Zustände über openHAB im LAN), läuft ohne LLM in Millisekunden.
 - **Das lokale Modell** (Ollama): freie Fragen, Gerätesteuerung per Werkzeug, Gedächtnis, Rechnen, einfache Stage-Inhalte.
 - Dashboard, Widgets (Wetter zeigt dann einen Hinweis), Gedächtnis (Notizen und Suche), Geräte-Panel, Audit-Log.
 
@@ -34,7 +34,7 @@ Gemessen am 17.10.2026 auf dem Heimserver (i5-8500T, 6 Kerne, Ollama-Container m
 4. **Vorwärmen.** Nach einem Kaltstart (Modell entladen oder Cat neu gestartet) brauchte die erste Antwort 75 bis 95 s. Darum lädt Cat das Modell samt Systemprompt und Werkzeugen beim Start und beim Öffnen der Oberfläche vor (ein Token Ausgabe, höchstens alle 4 Minuten). Gemessen: erste Antwort danach 9 bis 20 s statt 77 s.
 5. **Das Modell bleibt `CAT_LOCAL_KEEP_ALIVE` (10 min) im RAM** und wird danach entladen. In dieser Zeit hat der Server nur noch rund 1,2 GB frei. Das ging in der Messung ohne spürbare Folgen, ist aber knapp: ein **RAM-Upgrade auf 16 GB** wäre die wichtigste Verbesserung.
 
-Sprache: Befehle laufen über den Fast-Path (Antwort in unter 1 s). Freie gesprochene Fragen brauchen Erkennung (gemessen ca. 2,5 s mit `small`) plus Antwort des Modells (gemessen 4 bis 50 s je nach Werkzeug): brauchbar, aber nicht flüssig. Eine Messung über den ganzen Sprachweg mit dem lokalen Modell steht noch aus.
+Sprache: Bereits gelernte Befehle antworten in unter 1 s, ungelernte gehen erst an das Modell (4 bis 50 s). Freie gesprochene Fragen brauchen Erkennung (gemessen ca. 2,5 s mit `small`) plus Antwort des Modells (gemessen 4 bis 50 s je nach Werkzeug): brauchbar, aber nicht flüssig. Eine Messung über den ganzen Sprachweg mit dem lokalen Modell steht noch aus.
 
 ## Aktivieren, Betrieb, Deaktivieren
 

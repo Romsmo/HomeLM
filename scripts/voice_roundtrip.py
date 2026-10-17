@@ -80,7 +80,7 @@ async def run(args: argparse.Namespace) -> int:
         print("Latenz (ms, ab Ende der Äußerung):")
         for key in ("pause_ms", "stt_ms", "first_token_ms", "first_audio_ms", "total_ms"):
             print(f"  {key:15} {latency[key]}")
-        print(f"  Fast-Path       {latency['via_fastpath']}")
+        print(f"  Kurzbefehl      {latency['via_fastpath']}")
     if audio:
         await asyncio.to_thread(Path(args.output).write_bytes, write_wav(b"".join(audio), rate_out))
         seconds = len(b"".join(audio)) / (2 * rate_out)

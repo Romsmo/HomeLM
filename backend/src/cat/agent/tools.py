@@ -21,12 +21,24 @@ class Escalation:
     question: str = ""
 
 
+@dataclass(frozen=True)
+class ToolTrace:
+    """Ein ausgeführter Werkzeugaufruf eines Zuges (für Sicherung und Lernen)."""
+
+    tool: str
+    args: dict[str, Any]
+    ok: bool
+    result: str
+
+
 @dataclass
 class ToolContext:
     emit: Callable[[ServerEvent], Awaitable[None]]
     stage: StageStore
     # Vom Agenten gesetzt, wenn er abbricht, weil Claude übernehmen soll (siehe agent/router.py).
     escalation: Escalation | None = None
+    # Alle Werkzeugaufrufe dieses Zuges in der Reihenfolge der Ausführung.
+    trace: list[ToolTrace] = field(default_factory=list)
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[str]]

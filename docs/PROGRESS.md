@@ -376,3 +376,17 @@ Auftrag des Nutzers: Cat soll auf alles von openHAB zugreifen und es auch steuer
 **Hinweise**
 - Cat ist über `ai.catscastlecloud.de` aus dem Internet erreichbar und steuert jetzt echte Geräte. Dahinter stehen zwei Logins und die Sperren; Bestätigungspflicht gilt weiter für alles mit Risiko `high`, die erkannten Geräte enthalten aber keine Schlösser oder Tore.
 - Die vorläufige Beispiel-Allowlist wurde ersetzt (Sicherung `devices.yaml.bak-*`).
+
+## Phase 15: Lernen statt vorgefertigter Phrasen, Schutz vor erfundenen Erfolgsmeldungen (2026-10-17)
+
+Befund aus dem Test des Nutzers: "Mach es wieder aus" ergab "Okay, Deckenlicht Roman ist aus", das Licht blieb an. Ursache (Audit-Log und Sitzungsprotokoll): Das Satz ging nicht durch den Fast-Path (kein Gerätename), das lokale Modell antwortete nach 14 s **ohne ein Werkzeug aufzurufen**. Außerdem fragte der Nutzer, warum "das so schnell geht": Das war der regelbasierte Fast-Path mit vorgefertigten Synonymlisten (`intents/parser.py`, `synonyms.yaml`), kein Modell.
+
+**Geändert**
+- **Vorgefertigte Phrasen entfernt:** `intents/parser.py`, `vocabulary.py`, `synonyms.yaml`, `fastpath.py`, ihre 369 Zeilen Tests und `docs/intents.md` sind gelöscht. Dafür `intents/learned.py` (**Lernen aus Wiederholungen**, `docs/learning.md`): Löst das Modell dieselbe Formulierung zweimal gleich (`CAT_LEARN_AFTER`), merkt sich Cat einen Kurzbefehl und führt ihn danach ohne Sprachmodell aus (Millisekunden, auch offline), über denselben Gerätedienst (Modus, Risiko, Bestätigung, Audit). Bausteine: Gerät und Zahl als Platzhalter, Raum (Satellit), Abläufe mit mehreren Geräten, Abfragen. Nicht gelernt wird, was vom Gespräch abhängt ("es" direkt nach demselben Gerät), nur teilweise Erfolge oder andere Werkzeuge. Cat sagt im Chat, was es gelernt hat; das Widget **"Gelernt"** zeigt alles und löscht einzeln oder komplett (`/api/learned`).
+- **Sicherung gegen erfundene Erfolgsmeldungen** (`agent/loop.py`, `intents/claims.py`): Behauptet eine Antwort eine Schaltung oder einen Gerätezustand, ohne dass in dieser Anfrage ein Gerätewerkzeug lief, wird sie nicht gezeigt; das Modell bekommt einen Korrekturhinweis, danach ehrliche Meldung ("Das habe ich nicht ausgeführt ...").
+- **Kontext fürs Modell:** zuletzt bedientes Gerät ("es" auflösen) und der Raum des Sprechers (Satellit) stehen bei jeder Anfrage dabei (`room` kommt jetzt bis zum Agenten; vorher kannte nur der Fast-Path den Raum).
+- Werkzeug-Trace pro Anfrage (`ToolContext.trace`) als Grundlage für Sicherung und Lernen.
+
+**Abnahme**
+- Backend 427 Tests (+35 Lernen/Sicherung/API, -Fast-Path-Tests), Frontend 146 (+4 Widget "Gelernt"). Die Satelliten-Tests laufen mit einem vorab gelernten Raum-Kurzbefehl.
+- Der Tausch hat einen Preis: Anfragen, die noch nicht gelernt sind, brauchen das Modell (5 bis 60 s), vorher waren die häufigsten Befehle sofort da. Das ist die ausdrückliche Entscheidung des Nutzers.

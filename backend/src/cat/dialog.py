@@ -23,7 +23,9 @@ LOCK_WAIT_S = 30.0
 class EchoResponder:
     """Phase 1: gibt die Nutzernachricht wortweise zurück (kein LLM)."""
 
-    async def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]:
+    async def reply(
+        self, history: list[ChatMessage], spoken: bool = False, room: str | None = None
+    ) -> AsyncIterator[str]:
         last = history[-1].text
         words = f"Echo: {last}".split(" ")
         for i, word in enumerate(words):
@@ -47,7 +49,8 @@ async def handle_user_text(
 ) -> Reply:
     """Nimmt eine Nutzernachricht an, streamt die Antwort und pflegt den Verlauf.
 
-    Gerätebefehle erledigt zuerst der Fast-Path (ohne LLM). `room` ist der Raum des Satelliten.
+    Gelernte Kurzbefehle erledigen Wiederholtes zuerst (ohne LLM). `room` ist der Raum des
+    Satelliten (er gilt für Kurzbefehle und als Kontext für das Modell).
     `spoken=True`: Die Antwort wird vorgelesen (kurz, ohne Markdown). `on_delta` bekommt die
     Textteile der Antwort (für die satzweise Sprachausgabe). Gibt den Antworttext zurück.
     """
@@ -69,8 +72,8 @@ async def handle_user_text(
         if manage_voice_state:
             await state.emit(VoiceState(state="thinking"))
 
-        if state.settings.fastpath:
-            fast = await _try_fastpath(state, text, room)
+        if state.learner.enabled:
+            fast = await _try_learned(state, text, room)
             if fast is not None:
                 if on_delta:
                     await on_delta(fast)
@@ -86,7 +89,7 @@ async def handle_user_text(
         first_output: float | None = None
         try:
             responder = state.responder or EchoResponder()
-            async for delta in responder.reply(list(state.chat), spoken=spoken):
+            async for delta in responder.reply(list(state.chat), spoken=spoken, room=room):
                 if first_output is None:
                     first_output = time.perf_counter() - started
                 parts.append(delta)
@@ -109,12 +112,12 @@ async def handle_user_text(
         state.run_lock.release()
 
 
-async def _try_fastpath(state: AppState, text: str, room: str | None) -> str | None:
-    """Antworttext, wenn der Fast-Path den Befehl erledigt hat (kein LLM-Aufruf), sonst None."""
+async def _try_learned(state: AppState, text: str, room: str | None) -> str | None:
+    """Antwort eines gelernten Kurzbefehls (ohne Sprachmodell), sonst None."""
     try:
-        result = await state.fastpath.handle(text, room)
+        result = await state.learner.handle(text, room)
     except Exception:
-        log.exception("Fast-Path fehlgeschlagen, der Agent übernimmt")
+        log.exception("Gelernter Kurzbefehl fehlgeschlagen, der Agent übernimmt")
         return None
     if result is None:
         return None
@@ -124,9 +127,9 @@ async def _try_fastpath(state: AppState, text: str, room: str | None) -> str | N
     await state.emit(answer)
     await state.emit(ChatDone(id=answer.id))
     await state.audit.record(
-        "fastpath",
+        "learned_shortcut",
         {"text": text, "device": result.device_id, "command": result.command},
         result.text,
-        source="fastpath",
+        source="learned",
     )
     return result.text

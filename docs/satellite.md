@@ -7,7 +7,7 @@ Raum: Mikrofon -> Wake-Word (lokal) -> WebSocket /ws/voice -> Server: VAD, Whisp
                                                   <- Antwort-Audio, spielt über den Lautsprecher
 ```
 
-Ablauf und Protokoll: `docs/voice-protocol.md`. Der Raum eines Satelliten gilt als Standardraum: "Licht an" im Satelliten der Küche schaltet das Licht der Küche (Fast-Path, `docs/intents.md`). Mehrere Satelliten können gleichzeitig verbunden sein; Anfragen werden nacheinander bearbeitet.
+Ablauf und Protokoll: `docs/voice-protocol.md`. Der Raum eines Satelliten gilt als Kontext: "Licht an" im Satelliten der Küche meint das Licht der Küche. Das Modell erfährt den Raum bei jeder Anfrage, und ein oft wiederholter Satz wird für diesen Raum als Kurzbefehl gelernt (`docs/learning.md`). Mehrere Satelliten können gleichzeitig verbunden sein; Anfragen werden nacheinander bearbeitet.
 
 ## Was gebaut und geprüft ist, und was nicht
 

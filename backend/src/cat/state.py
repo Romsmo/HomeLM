@@ -1,7 +1,11 @@
 import asyncio
+import logging
+import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from typing import Any, Protocol
 
+from cat.agent.tools import ToolTrace
 from cat.audit import AuditLog
 from cat.auth import Auth
 from cat.config import Settings
@@ -9,8 +13,7 @@ from cat.devices.allowlist import load_allowlist
 from cat.devices.confirm import ConfirmManager
 from cat.devices.service import DeviceService
 from cat.files import Inbox
-from cat.intents.fastpath import FastPath
-from cat.intents.vocabulary import load_vocabulary
+from cat.intents.learned import Learner
 from cat.memory.service import MemoryService
 from cat.plugins.pending import PendingPlugins
 from cat.sandbox.client import SandboxClient
@@ -20,11 +23,15 @@ from cat.voice.pipeline import VoiceEngine
 from cat.ws.hub import Hub
 from cat.ws.protocol import ChatMessage, ProviderState, ServerEvent, WidgetUpdate
 
+log = logging.getLogger("cat")
+
 
 class Responder(Protocol):
     """Erzeugt die Assistentenantwort als Strom von Textteilen."""
 
-    def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]: ...
+    def reply(
+        self, history: list[ChatMessage], spoken: bool = False, room: str | None = None
+    ) -> AsyncIterator[str]: ...
 
 
 class AppState:
@@ -60,7 +67,9 @@ class AppState:
         self.sandbox = SandboxClient(settings.sandbox_dir)
         self.inbox = Inbox(settings.inbox_dir)
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
-        self.fastpath = FastPath(self.devices, load_vocabulary(settings.synonyms_file))
+        self.learner = Learner(
+            settings.learned_file, self.devices, settings.learn_after, settings.learn
+        )
         # Wird vom Plugin-Manager gesetzt (Phase 3): Widget neu laden, True bei Erfolg.
         self.widget_refresher: Callable[[str], Awaitable[bool]] | None = None
 
@@ -68,6 +77,31 @@ class AppState:
         """Vom Fallback-Anbieter aufgerufen, wenn das antwortende Modell wechselt."""
         self.provider_state = ProviderState(name=name, offline=offline)
         await self.emit(self.provider_state)
+
+    async def learn_from(
+        self,
+        question: str,
+        trace: list[ToolTrace],
+        room: str | None = None,
+        previous_device: str | None = None,
+    ) -> None:
+        """Nach einer vom Modell gelösten Anfrage: daraus lernen und es dem Nutzer sagen."""
+        try:
+            learned = self.learner.observe(question, trace, room, previous_device)
+        except Exception:
+            log.exception("Lernen fehlgeschlagen")
+            return
+        if learned is None:
+            return
+        note = ChatMessage(
+            id=uuid.uuid4().hex,
+            role="system",
+            text=f'Gemerkt: Auf "{learned.key}" antworte ich künftig sofort, ohne Sprachmodell. '
+            'Im Widget "Gelernt" lässt sich das wieder löschen.',
+            ts=time.time(),
+        )
+        self.chat.append(note)
+        await self.emit(note)
 
     async def emit(self, event: ServerEvent) -> None:
         await self.hub.broadcast(event)
