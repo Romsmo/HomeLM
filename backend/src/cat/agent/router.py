@@ -15,6 +15,7 @@ Claude steht im Audit-Log und zählt gegen das Tageslimit.
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 
 from cat.agent.loop import Agent, to_llm_messages
@@ -95,12 +96,21 @@ class RoutedResponder:
         self._local_name = local_name
         self._claude = claude
         self._budget = budget
+        self._last_use = 0.0
+
+    async def warm(self, idle_s: float = 240.0) -> None:
+        """Modell vorladen, wenn es länger ruhte (z. B. beim Öffnen der Oberfläche)."""
+        if time.monotonic() - self._last_use < idle_s and self._last_use:
+            return
+        self._last_use = time.monotonic()
+        await self._agent.warm()
 
     def _available(self) -> bool:
         return self._claude is not None and self._budget is not None and not self._budget.blocked()
 
     async def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]:
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
+        self._last_use = time.monotonic()
         if self._claude and is_explicit_request(question):
             async for part in self._escalate(history, Escalation("explicit"), spoken):
                 yield part

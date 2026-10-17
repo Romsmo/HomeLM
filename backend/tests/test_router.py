@@ -265,3 +265,24 @@ async def test_tasks_the_local_model_cannot_do_skip_it_entirely(make) -> None:  
     assert text.startswith("Hier ist deine Uhr.") and env.provider.calls == []
     (entry,) = [e for e in env.audit_lines() if e["tool"] == "claude_escalation"]
     assert entry["params"]["reason"] == "task"
+
+
+class WarmProvider(FakeProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.warmed: list[tuple[str, list[str]]] = []
+
+    async def warm(self, system: str, tools: list[Any]) -> None:
+        self.warmed.append((system, [t["function"]["name"] for t in tools]))
+
+
+async def test_warm_up_runs_once_while_the_model_is_hot(tmp_path: Path) -> None:
+    provider = WarmProvider()
+    env = Env(tmp_path, provider, FakeClaude(), 10)
+    await env.responder.warm()  # type: ignore[union-attr]
+    await env.responder.warm()  # type: ignore[union-attr]
+    assert len(provider.warmed) == 1
+    system, names = provider.warmed[0]
+    assert "Du bist Cat" in system and "ask_claude" in names
+    await env.responder.warm(idle_s=0.0)  # type: ignore[union-attr]
+    assert len(provider.warmed) == 2

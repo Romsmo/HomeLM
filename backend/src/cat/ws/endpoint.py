@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Coroutine
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -45,6 +47,20 @@ async def _replay(state: AppState, conn: Connection) -> None:
     await conn.send(state.provider_state)
 
 
+def _warm_up(state: AppState) -> None:
+    """Beim Öffnen der Oberfläche das lokale Modell vorladen (siehe RoutedResponder.warm)."""
+    warm = getattr(state.responder, "warm", None)
+    if warm is not None:
+        state.spawn(_safe(warm()))
+
+
+async def _safe(coro: Coroutine[Any, Any, None]) -> None:
+    try:
+        await coro
+    except Exception:
+        log.exception("Vorwärmen fehlgeschlagen")
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     state: AppState = ws.app.state.cat
@@ -55,6 +71,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     conn = state.hub.add(ws)
     try:
         await _replay(state, conn)
+        _warm_up(state)
         while True:
             raw = await ws.receive_text()
             try:

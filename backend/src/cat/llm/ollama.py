@@ -101,6 +101,26 @@ class OllamaProvider:
         for call in calls:
             yield call
 
+    async def warm(self, system: str, tools: list[ToolSchema]) -> None:
+        """Lädt das Modell und verarbeitet Systemprompt und Werkzeuge vor (ein Token Ausgabe).
+
+        Ollama behält den bekannten Anfang einer Anfrage. Wer das vor der ersten echten Frage
+        erledigt, spart ihr auf der CPU rund eine Minute. Fehler sind hier egal."""
+        body = {
+            "model": self._model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": "Hi"}],
+            "stream": False,
+            "think": False,
+            "keep_alive": self._keep_alive,
+            "options": {**self._options, "num_predict": 1},
+            "tools": tools,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as http:
+                await http.post(self._url, json=body)
+        except httpx.HTTPError as exc:
+            log.info("Vorwärmen des lokalen Modells nicht möglich: %s", type(exc).__name__)
+
 
 def _http_error(status: int, body: bytes, model: str) -> LLMError:
     detail = ""

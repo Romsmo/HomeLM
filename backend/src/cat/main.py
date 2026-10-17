@@ -81,9 +81,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await plugins.start()
         summary_task = _start_summaries(state)
         voice_task = _start_voice(state)
+        warm = getattr(state.responder, "warm", None)  # lokales Modell vorladen
+        warm_task = asyncio.create_task(warm()) if warm else None
         try:
             yield
         finally:
+            if warm_task:
+                warm_task.cancel()
             if summary_task:
                 summary_task.cancel()
             if voice_task:

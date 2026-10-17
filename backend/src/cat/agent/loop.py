@@ -82,6 +82,12 @@ class Agent:
             return
         yield ("\n\n" if wrote_text else "") + LIMIT_NOTICE
 
+    async def warm(self) -> None:
+        """Lässt den Anbieter Systemprompt und Werkzeuge vorab verarbeiten (falls er das kann)."""
+        warm = getattr(self._provider, "warm", None)
+        if warm is not None:
+            await warm(self._system_prompt(), self._registry.schemas())
+
     async def _execute(self, call: ToolCall, ctx: ToolContext) -> str:
         """Führt ein Werkzeug aus und protokolliert jeden Aufruf (auch Fehlschläge)."""
         result, ok = await self._run_tool(call, ctx)

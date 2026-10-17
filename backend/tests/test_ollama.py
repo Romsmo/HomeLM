@@ -130,3 +130,21 @@ def test_messages_are_converted_to_ollama_format() -> None:
         {"function": {"name": "set_state", "arguments": {"device": "licht"}}}
     ]
     assert converted[2] == {"role": "tool", "tool_name": "set_state", "content": "ok"}
+
+
+async def test_warm_up_sends_prompt_with_one_token_and_ignores_errors() -> None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "Hi"}, "done": True})
+
+    await provider(handler, num_thread=3).warm("SYS", [{"type": "function"}])
+    assert seen["options"]["num_predict"] == 1 and seen["options"]["num_thread"] == 3
+    assert seen["messages"][0] == {"role": "system", "content": "SYS"}
+    assert seen["tools"] == [{"type": "function"}] and seen["stream"] is False
+
+    def down(_: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("aus")
+
+    await provider(down).warm("SYS", [])  # wirft nicht

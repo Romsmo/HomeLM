@@ -24,6 +24,8 @@ from pathlib import Path
 
 from cat.agent.responder import build_responder
 from cat.config import Settings
+from cat.plugins.manager import PluginManager
+from cat.plugins.registry import PluginServices, build_plugins
 from cat.state import AppState
 from cat.ws.protocol import ChatMessage
 
@@ -52,7 +54,13 @@ async def main() -> None:
             shutil.copytree(source / name, scratch / name)
     settings = Settings(data_dir=scratch)  # type: ignore[call-arg]
     state = AppState(settings)
-    responder = build_responder(state)
+    async def ignore(_: object) -> None: ...
+
+    # Wie im laufenden Cat (gleiche Werkzeuge, damit der vorverarbeitete Prompt passt).
+    plugins = PluginManager(
+        build_plugins(settings, PluginServices(devices=state.devices)), settings, ignore  # type: ignore[arg-type]
+    )
+    responder = build_responder(state, extra_tools=plugins.tools())
     say(
         f"Modell: {settings.local_model or settings.llm_model}, "
         f"Claude: {'an (' + settings.claude_url + ')' if settings.claude_url else 'aus'}"
