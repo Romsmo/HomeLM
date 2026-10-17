@@ -31,6 +31,12 @@ services:
     # Mit Sprache (STT base) braucht Cat ca. 600 MB. Ein Fehler in Cat darf Nextcloud nicht verdrängen.
     mem_limit: 1536m
     cpus: 3.0
+    networks:
+      default: {}
+      # Netz von Caddy: so erreicht der Reverse-Proxy Cat unter cat-server:8000
+      # (docs/public-access.md). Cat selbst ist nur über Caddy und das LAN-Port erreichbar.
+      docker_proxy:
+        aliases: [cat-server]
 
   # Code-Sandbox für das Tool run_python: KEIN Netzwerk, schreibgeschützt, ohne Capabilities,
   # mit Speicher-, CPU- und Prozesslimit. Cat und Sandbox tauschen nur Dateien in data/sandbox aus.
@@ -109,6 +115,9 @@ services:
       - ./data/inbox:/inbox:ro
 
 networks:
+  docker_proxy:
+    external: true
+    name: docker_proxy
   default:
     # Festes Subnetz, damit die Firewall-Regel für den Weg zu openHAB stabil bleibt.
     ipam:

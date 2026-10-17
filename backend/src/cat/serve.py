@@ -40,7 +40,13 @@ def tls_ready(settings: Settings) -> bool:
 
 def build_configs(settings: Settings, app: FastAPI) -> list[uvicorn.Config]:
     log_level = settings.log_level.lower()
-    configs = [uvicorn.Config(app, host=settings.host, port=settings.port, log_level=log_level)]
+    proxy = {
+        "proxy_headers": bool(settings.trusted_proxies.strip()),
+        "forwarded_allow_ips": settings.trusted_proxies.strip() or "127.0.0.1",
+    }
+    configs = [
+        uvicorn.Config(app, host=settings.host, port=settings.port, log_level=log_level, **proxy)
+    ]
     if tls_ready(settings):
         configs.append(
             uvicorn.Config(
@@ -51,6 +57,7 @@ def build_configs(settings: Settings, app: FastAPI) -> list[uvicorn.Config]:
                 ssl_keyfile=str(settings.tls_key),
                 lifespan="off",
                 log_level=log_level,
+                **proxy,
             )
         )
     return configs

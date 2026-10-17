@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
 import time
@@ -86,6 +87,10 @@ class Auth:
         )
         self.signer = SessionSigner(secret, settings.session_ttl_hours * 3600)
         self.limiter = LoginLimiter()
+        # Schutz gegen verteiltes Raten (viele Quellen, je wenige Versuche): Kommen aus dem Internet
+        # insgesamt zu viele Fehlversuche, ist die Anmeldung von außen kurz gesperrt. Anfragen aus
+        # dem Heimnetz zählen dafür nicht und werden nicht gesperrt.
+        self.global_limiter = LoginLimiter(max_failures=20, lockout_s=600.0)
 
     @property
     def configured(self) -> bool:
@@ -101,6 +106,15 @@ class Auth:
 
     def is_authenticated(self, cookies: dict[str, str]) -> bool:
         return self.signer.verify(cookies.get(COOKIE_NAME))
+
+
+def is_local(host: str) -> bool:
+    """Adresse aus dem Heimnetz, Loopback oder anderem nicht öffentlichem Bereich."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return not ip.is_global
 
 
 class LoginBody(BaseModel):
@@ -127,11 +141,17 @@ async def login(body: LoginBody, request: Request, response: Response) -> dict[s
     if not auth.configured:
         raise HTTPException(503, "Kein Passwort konfiguriert (CAT_PASSWORD in der .env setzen)")
     key = request.client.host if request.client else "unknown"
-    wait = auth.limiter.retry_after(key)
+    remote = not is_local(key)
+    wait = max(
+        auth.limiter.retry_after(key),
+        auth.global_limiter.retry_after("*") if remote else 0.0,
+    )
     if wait > 0:
         raise HTTPException(429, "Zu viele Versuche", headers={"Retry-After": str(int(wait) + 1)})
     if not auth.check_password(body.password):
         auth.limiter.record_failure(key)
+        if remote:
+            auth.global_limiter.record_failure("*")
         raise HTTPException(401, "Falsches Passwort")
     auth.limiter.reset(key)
     response.set_cookie(

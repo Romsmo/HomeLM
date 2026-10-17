@@ -76,3 +76,17 @@ def test_login_cookie_is_secure_only_over_https(settings: Settings) -> None:
             assert response.status_code == 200
             header = response.headers["set-cookie"].lower()
             assert ("secure" in header.split("; ")) is secure, header
+
+
+def test_internet_failures_share_a_global_limit_but_the_home_network_is_exempt(
+    settings: Settings,
+) -> None:
+    from cat.auth import is_local
+
+    assert is_local("192.168.0.20") and is_local("172.19.0.2") and is_local("127.0.0.1")
+    assert not is_local("8.8.8.8") and not is_local("nicht-ip")
+
+    limiter = LoginLimiter(max_failures=3, lockout_s=60.0, clock=lambda: 0.0)
+    for _ in range(3):
+        limiter.record_failure("*")
+    assert limiter.retry_after("*") > 0

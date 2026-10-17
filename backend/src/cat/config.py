@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     tls_cert: Path | None = None
     tls_key: Path | None = None
     tls_port: int = 8443
+    # Reverse-Proxy (Caddy), dem Cat die Client-IP und das Schema (X-Forwarded-*) glaubt. Komma-
+    # getrennte IPs oder Netze, z. B. 172.19.0.0/16 (das Docker-Netz von Caddy). Leer = niemand.
+    # Ohne das sähe Cat hinter dem Proxy nur die Proxy-IP (Anmelde-Sperre träfe alle gemeinsam).
+    trusted_proxies: str = ""
 
     # Login der Weboberfläche. Ohne Passwort ist kein Login möglich (fail closed).
     password: SecretStr | None = None
