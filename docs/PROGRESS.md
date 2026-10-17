@@ -303,3 +303,26 @@ Auftrag des Nutzers (ausdrücklich): Claude über das Abo einbinden (keinen API-
 
 **Rollback**
 - Lokal zuerst aus: `CAT_LOCAL_MODEL` in `.env` leeren, `docker compose up -d --no-build backend` (alter Cloud-Modus). Claude aus: `CAT_CLAUDE_URL` leeren und `docker compose --profile claude stop claude-bridge`. Ollama stoppen: `docker compose --profile offline stop ollama`. Die Modelle liegen in `data/ollama` (eigener Ordner). Code: Stand vor Phase 10 ist Commit `840b15e`.
+
+## Phase 11: HUD-Arbeitsraum (2026-10-17)
+
+Auftrag des Nutzers: Oberfläche nach den Vorlagen (Iron-Man/Jarvis-Desktops) komplett neu: ein riesiger Arbeitsraum, in der Mitte die Darstellung von Cat, ringsum Widgets, die sich dem Platz anpassen; Klick auf die Mitte öffnet den Chat, sonst kann man immer sprechen; die Kopfzeile bleibt.
+
+**Echter Claude-Test vorab (Token des Nutzers eingetragen): bestanden**
+- Brücke meldet `"token":true`. "Frag Claude: Was ist die Hauptstadt von Australien?" → korrekte Antwort mit Vermerk "Antwort von Claude" (2,5 s, im Audit-Log `claude_escalation`).
+- "Zeig mir auf der Stage eine animierte Uhr" → Router schickt es direkt an Claude, der ```html-Block wird für die Stage herausgelöst (8,9 s).
+- Zugriff auf das Gedächtnis: Mit einer vorübergehenden Testnotiz ("Meerschwein Keks") beantwortete Claude eine Frage nach dem Haustier aus den Notizen. Die Testnotiz ist wieder gelöscht. Offen bleibt, ob dabei Claudes eigene Suche (Grep/Read) oder nur der FTS-Treffer im Prompt gewirkt hat; beide Wege sind aktiv.
+- `claude.env` gehört `root` (Rechte 600): ich kann sie nicht lesen und die Brücke nicht selbst neu erzeugen; der Nutzer hat sie mit erhöhten Rechten gestartet. Das ist gewollt (Token bleibt geschützt), bei künftigem Neustart der Brücke braucht es `sudo docker compose ...` oder `sudo chown`.
+
+**Gebaut (frontend/src)**
+- `components/Dashboard.tsx`: Vollbild-Arbeitsraum mit Raster-Hintergrund. Spalten `links | Kern | rechts` (Breite `1fr 2.1fr 1fr`), die Widgets teilen sich die Höhe (flex, Schrift und Ringe skalieren mit `vh`, Überlauf scrollt innen). Unter 1024 px stapelt alles (Kern zuerst).
+- `hud/CatCore.tsx`: animierter Kern aus rotierenden Ringen, Skala, rotem Akzentbogen und leuchtender Kugel; Zustände wartet/hört/denkt/spricht ändern Tempo, Farbe und Wellen (Reduced-Motion respektiert). **Klick auf den Kern öffnet den Chat.**
+- `hud/ChatOverlay.tsx`: Chat als undurchsichtige Glasfläche über dem Arbeitsraum (Esc, Hintergrund-Klick oder Knopf schließen; Eingabefeld hat sofort den Fokus).
+- `hud/Caption.tsx`: letzte Frage und Antwort unter dem Kern, Mikrofon-Knopf und Zustandstext. Klick öffnet den Chat.
+- **Immer sprechen:** `useVoice(connected, autoStart)` startet das Mikrofon von selbst, sobald die Sprache auf dem Server bereit ist (merkt sich "aus" im Browser, startet nach Verbindungsabbruch neu, weckt den Audio-Kontext bei der ersten Berührung). Auf `http://` im LAN sperren Browser das Mikrofon: der Hinweis steht unter dem Kern (HTTPS über Caddy ist weiter offen, braucht Ihre Freigabe).
+- `hud/Hud.tsx` (Glas-Panel mit Eckklammern, Ringanzeige), `hud/TimeWidgets.tsx` (Datum im Ring, Uhr im Ring), Widgets neu gestaltet (System als zwei Ringe plus Balken, Wetter, Uptime, Geräteliste mit Zustandspunkten). Stage liegt als Fläche über dem Kern ("Ausblenden" gibt ihn frei, "Leeren" löscht). Kopfzeile bleibt (HUD-Optik, Datum entfernt, da im Ring).
+- Entfernt: `Orb`, `WidgetColumn`.
+
+**Abnahme**
+- Frontend 108 Tests (vorher 91), `tsc` sauber, Build 428 kB. Im Browser (lokaler Dev-Server, Anmeldung mit Testpasswort): Anmeldeseite, Arbeitsraum, Chat-Overlay, Stage über dem Kern und Mobilansicht (375 px) angesehen und in Ordnung.
+- **Nicht geprüft:** größere Bildschirme (die Vorschau des Browser-Panels war nur 800x366 px groß; die Emulation größerer Fenster wurde abgeschnitten dargestellt), echtes Mikrofon-Autostart im Browser (braucht HTTPS oder localhost mit Server-Sprache), Touch-Bedienung.

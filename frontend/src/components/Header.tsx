@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useNow } from "../hooks/useNow";
 import type { ConnectionStatus } from "../lib/socket";
 import type { WidgetState } from "../state/store";
 import { weatherSummary } from "./widgets/weather";
@@ -20,15 +20,6 @@ export function shortModel(name: string): string {
   return name.includes("/") ? name.slice(name.indexOf("/") + 1) : name;
 }
 
-function useNow(intervalMs = 1000): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
-
 export default function Header({
   connection,
   weather,
@@ -43,9 +34,9 @@ export default function Header({
   const now = useNow();
   const status = STATUS[connection];
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-800 bg-slate-900/60 px-4 py-3 backdrop-blur">
+    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b border-cyan-400/20 bg-black/50 px-4 py-2 backdrop-blur">
       <div className="flex items-center gap-4">
-        <h1 className="text-xl font-semibold tracking-[0.3em] text-cyan-300 uppercase">Cat</h1>
+        <h1 className="hud-text-glow text-xl font-semibold tracking-[0.3em] text-cyan-300 uppercase">Cat</h1>
         <div className="flex items-center gap-2 text-sm text-slate-300" role="status">
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${status.dot}`} aria-hidden />
           {status.label}
@@ -57,7 +48,7 @@ export default function Header({
             className={`rounded-full border px-2.5 py-0.5 text-xs ${
               provider.offline
                 ? "border-amber-500/70 bg-amber-950/50 text-amber-300"
-                : "border-slate-700 text-slate-400"
+                : "border-cyan-400/30 text-cyan-200/70"
             }`}
           >
             {providerLabel(provider)}: {shortModel(provider.name)}
@@ -68,18 +59,13 @@ export default function Header({
         <span className="text-slate-300" data-testid="header-weather">
           {weatherSummary(weather)}
         </span>
-        <div className="text-right leading-tight">
-          <div className="text-lg font-medium tabular-nums">
-            {now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-          </div>
-          <div className="text-xs text-slate-400">
-            {now.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}
-          </div>
+        <div className="text-lg font-medium tabular-nums text-cyan-100">
+          {now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </div>
         <button
           type="button"
           onClick={onLogout}
-          className="rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 transition hover:border-slate-500 hover:text-white"
+          className="hud-btn rounded-lg px-3 py-1"
         >
           Abmelden
         </button>

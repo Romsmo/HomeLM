@@ -1,5 +1,5 @@
 import type { WidgetState } from "../../state/store";
-import { WidgetCard } from "../WidgetColumn";
+import { HudPanel as WidgetCard, Ring } from "../hud/Hud";
 import { formatBytes, formatNumber, num } from "./format";
 import Meter from "./Meter";
 
@@ -14,7 +14,7 @@ export default function SystemWidget({ widget }: { widget: WidgetState }) {
 
   return (
     <WidgetCard title={widget.title}>
-      {widget.status === "loading" && !hasData && <p className="text-sm text-slate-500">Lade …</p>}
+      {widget.status === "loading" && !hasData && <p className="text-sm text-cyan-200/50">Lade …</p>}
       {widget.status === "error" && (
         <p role="alert" className="text-sm text-rose-400">
           {widget.error ?? "Nicht verfügbar"}
@@ -22,25 +22,33 @@ export default function SystemWidget({ widget }: { widget: WidgetState }) {
       )}
       {hasData && widget.status === "ok" && (
         <div className="flex flex-col gap-3">
-          <Meter
-            label="CPU"
-            percent={num(d.cpu_percent)}
-            detail={num(d.cpu_count) ? `${num(d.cpu_count)} Kerne` : undefined}
-          />
-          <Meter
-            label="Arbeitsspeicher"
-            percent={num(d.mem_percent)}
-            detail={memUsed !== null && memTotal !== null ? `${formatBytes(memUsed)} / ${formatBytes(memTotal)}` : undefined}
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Ring
+              label="CPU"
+              percent={num(d.cpu_percent)}
+              detail={num(d.cpu_count) ? `${num(d.cpu_count)} Kerne` : undefined}
+            />
+            <Ring
+              label="Arbeitsspeicher"
+              percent={num(d.mem_percent)}
+              detail={
+                memUsed !== null && memTotal !== null
+                  ? `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`
+                  : undefined
+              }
+            />
+          </div>
           <Meter
             label="Datenträger"
             percent={num(d.disk_percent)}
-            detail={diskUsed !== null && diskTotal !== null ? `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}` : undefined}
+            detail={
+              diskUsed !== null && diskTotal !== null
+                ? `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`
+                : undefined
+            }
           />
           {load.length === 3 && (
-            <p className="text-xs text-slate-500">
-              Last {load.map((x) => formatNumber(x, 2)).join(" · ")}
-            </p>
+            <p className="text-xs text-cyan-200/50">Last {load.map((x) => formatNumber(x, 2)).join(" · ")}</p>
           )}
         </div>
       )}

@@ -19,14 +19,22 @@ const item = (over: Partial<StageItem>): StageItem => ({
 function setup(items: StageItem[], index = items.length - 1) {
   const onGo = vi.fn();
   const onClear = vi.fn();
-  render(<Stage voice="idle" items={items} index={index} onGo={onGo} onClear={onClear} />);
-  return { onGo, onClear };
+  const onHide = vi.fn();
+  render(<Stage items={items} index={index} onGo={onGo} onClear={onClear} onHide={onHide} />);
+  return { onGo, onClear, onHide };
 }
 
 describe("Stage", () => {
-  it("zeigt ohne Inhalt den Orb", () => {
+  it("zeigt ohne Inhalt nichts (der Cat-Kern bleibt sichtbar)", () => {
     setup([]);
-    expect(screen.getByRole("img", { name: "Cat wartet" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Stage")).not.toBeInTheDocument();
+  });
+
+  it("blendet sich auf Wunsch aus, ohne den Inhalt zu löschen", () => {
+    const { onHide, onClear } = setup([item({})]);
+    fireEvent.click(screen.getByRole("button", { name: "Ausblenden" }));
+    expect(onHide).toHaveBeenCalled();
+    expect(onClear).not.toHaveBeenCalled();
   });
 
   it("rendert Markdown formatiert", () => {

@@ -25,12 +25,35 @@ async function fetchInfo(): Promise<VoiceInfo | null> {
   }
 }
 
-export function useVoice(connected: boolean): MicControl {
+const PREF_KEY = "cat.mic";
+
+function micWanted(): boolean {
+  try {
+    return window.localStorage.getItem(PREF_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function rememberMic(on: boolean): void {
+  try {
+    window.localStorage.setItem(PREF_KEY, on ? "on" : "off");
+  } catch {
+    // Speicher gesperrt: dann gilt die Voreinstellung (an)
+  }
+}
+
+/**
+ * Mikrofon und Spracheingabe. Mit `autoStart` hört Cat von selbst zu, sobald Sprache auf dem
+ * Server bereit ist (außer der Nutzer hat das Mikrofon ausgeschaltet; das merkt sich der Browser).
+ */
+export function useVoice(connected: boolean, autoStart = false): MicControl {
   const [state, setState] = useState<MicState>("off");
   const [info, setInfo] = useState<VoiceInfo | null>(null);
   const [latency, setLatency] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const client = useRef<VoiceClient | null>(null);
+  const autoTried = useRef(false);
 
   useEffect(() => {
     if (!connected) return;
@@ -54,12 +77,7 @@ export function useVoice(connected: boolean): MicControl {
     else if (!info.ready) unavailable = info.error ?? "Die Sprachmodelle laden noch.";
   }
 
-  const toggle = useCallback(() => {
-    if (client.current) {
-      client.current.stop();
-      client.current = null;
-      return;
-    }
+  const start = useCallback(() => {
     setError(null);
     const c = new VoiceClient({
       onState: (s) => {
@@ -73,6 +91,39 @@ export function useVoice(connected: boolean): MicControl {
     });
     client.current = c;
     void c.start();
+  }, []);
+
+  const toggle = useCallback(() => {
+    if (client.current) {
+      rememberMic(false);
+      client.current.stop();
+      client.current = null;
+      return;
+    }
+    rememberMic(true);
+    start();
+  }, [start]);
+
+  // Automatisch starten, sobald alles bereit ist; nach einem Verbindungsabbruch erneut versuchen.
+  useEffect(() => {
+    if (!connected) autoTried.current = false;
+  }, [connected]);
+  useEffect(() => {
+    if (!autoStart || unavailable !== null || client.current || autoTried.current) return;
+    if (!micWanted()) return;
+    autoTried.current = true;
+    start();
+  }, [autoStart, unavailable, start, connected]);
+
+  // Audio darf erst nach einer Berührung laufen: dann das Mikrofon "aufwecken".
+  useEffect(() => {
+    const wake = () => client.current?.resume();
+    window.addEventListener("pointerdown", wake);
+    window.addEventListener("keydown", wake);
+    return () => {
+      window.removeEventListener("pointerdown", wake);
+      window.removeEventListener("keydown", wake);
+    };
   }, []);
 
   return { state, unavailable, latency, error, toggle };

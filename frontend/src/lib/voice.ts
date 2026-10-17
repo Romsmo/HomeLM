@@ -144,6 +144,7 @@ export class VoiceClient {
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       this.ctx = new AudioContext();
+      void this.ctx.resume().catch(() => {});
       const url = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "text/javascript" }));
       await this.ctx.audioWorklet.addModule(url);
       URL.revokeObjectURL(url);
@@ -217,6 +218,11 @@ export class VoiceClient {
       this.active -= 1;
       if (this.active === 0 && this.pendingEnd) this.cb.onState("ready");
     };
+  }
+
+  /** Browser starten Audio erst nach einer Nutzeraktion: bei der ersten Berührung nachholen. */
+  resume(): void {
+    if (this.ctx && this.ctx.state === "suspended") void this.ctx.resume().catch(() => {});
   }
 
   stop(): void {

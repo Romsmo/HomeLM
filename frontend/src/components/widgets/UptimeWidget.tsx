@@ -1,5 +1,5 @@
 import type { WidgetState } from "../../state/store";
-import { WidgetCard } from "../WidgetColumn";
+import { HudPanel as WidgetCard } from "../hud/Hud";
 import { formatDuration, num } from "./format";
 
 export default function UptimeWidget({ widget }: { widget: WidgetState }) {
@@ -12,12 +12,12 @@ export default function UptimeWidget({ widget }: { widget: WidgetState }) {
           {widget.error ?? "Nicht verfügbar"}
         </p>
       )}
-      {widget.status === "loading" && system === null && <p className="text-sm text-slate-500">Lade …</p>}
+      {widget.status === "loading" && system === null && <p className="text-sm text-cyan-200/50">Lade …</p>}
       {system !== null && widget.status === "ok" && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-          <dt className="text-slate-400">Server</dt>
+          <dt className="text-cyan-300/70">Server</dt>
           <dd className="text-right tabular-nums">{formatDuration(system)}</dd>
-          <dt className="text-slate-400">Cat</dt>
+          <dt className="text-cyan-300/70">Cat</dt>
           <dd className="text-right tabular-nums">{cat !== null ? formatDuration(cat) : "–"}</dd>
         </dl>
       )}

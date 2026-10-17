@@ -3,6 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { chatToMarkdown, downloadText, exportFileName } from "../lib/exportChat";
 import type { MicControl } from "../hooks/useVoice";
+import MicButton from "./MicButton";
 import type { ChatItem } from "../state/store";
 
 function Bubble({ message }: { message: ChatItem }) {
@@ -12,10 +13,10 @@ function Bubble({ message }: { message: ChatItem }) {
       <div
         className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
           mine
-            ? "bg-cyan-500/90 text-slate-950"
+            ? "bg-cyan-300/90 text-slate-950"
             : message.role === "system"
               ? "bg-slate-800 text-slate-300 italic"
-              : "border border-slate-700 bg-slate-900 text-slate-100"
+              : "border border-cyan-400/25 bg-black/40 text-cyan-50"
         }`}
       >
         {mine ? (
@@ -31,44 +32,6 @@ function Bubble({ message }: { message: ChatItem }) {
         )}
       </div>
     </div>
-  );
-}
-
-const MIC_LABEL: Record<MicControl["state"], string> = {
-  off: "Mikrofon einschalten",
-  connecting: "Mikrofon wird verbunden",
-  ready: "Mikrofon ausschalten (wartet auf Sprache)",
-  listening: "Mikrofon ausschalten (hört zu)",
-  thinking: "Mikrofon ausschalten (Cat denkt nach)",
-  speaking: "Mikrofon ausschalten (Cat spricht)",
-};
-
-function MicButton({ mic }: { mic: MicControl }) {
-  const active = mic.state !== "off";
-  const disabled = mic.unavailable !== null && !active;
-  return (
-    <button
-      type="button"
-      onClick={mic.toggle}
-      disabled={disabled}
-      aria-pressed={active}
-      aria-label={MIC_LABEL[mic.state]}
-      title={disabled ? (mic.unavailable ?? undefined) : MIC_LABEL[mic.state]}
-      className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-40 ${
-        mic.state === "listening"
-          ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
-          : mic.state === "speaking"
-            ? "border-amber-400 bg-amber-500/20 text-amber-300"
-            : active
-              ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
-              : "border-slate-700 text-slate-300 hover:border-slate-500"
-      }`}
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-        <rect x="9" y="3" width="6" height="11" rx="3" />
-        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-      </svg>
-    </button>
   );
 }
 
@@ -112,16 +75,16 @@ export default function ChatPanel({
   return (
     <section
       aria-label="Chat"
-      className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur"
+      className="hud-panel hud-solid flex min-h-0 flex-1 flex-col"
     >
-      <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5">
-        <h2 className="text-xs font-semibold tracking-widest text-slate-400 uppercase">Chat</h2>
+      <header className="flex items-center justify-between border-b border-cyan-400/15 px-4 py-2.5">
+        <h2 className="hud-title">Chat</h2>
         <div className="flex gap-2 text-xs">
           <button
             type="button"
             onClick={() => downloadText(exportFileName(), chatToMarkdown(messages))}
             disabled={messages.length === 0}
-            className="rounded-md border border-slate-700 px-2.5 py-1 text-slate-300 transition hover:border-slate-500 disabled:opacity-40"
+            className="hud-btn rounded-md px-2.5 py-1 disabled:opacity-40"
           >
             Exportieren
           </button>
@@ -129,7 +92,7 @@ export default function ChatPanel({
             type="button"
             onClick={onClear}
             disabled={messages.length === 0 || busy}
-            className="rounded-md border border-slate-700 px-2.5 py-1 text-slate-300 transition hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
+            className="hud-btn rounded-md px-2.5 py-1 hover:!border-rose-500 hover:!text-rose-300 disabled:opacity-40"
           >
             Leeren
           </button>
@@ -138,7 +101,7 @@ export default function ChatPanel({
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4" role="log" aria-live="polite">
         {messages.length === 0 && (
-          <p className="m-auto text-center text-sm text-slate-500">Sag etwas zu Cat.</p>
+          <p className="m-auto text-center text-sm text-cyan-200/40">Sag etwas zu Cat.</p>
         )}
         {messages.map((m) => (
           <Bubble key={m.id} message={m} />
@@ -147,7 +110,7 @@ export default function ChatPanel({
       </div>
 
       {mic && (mic.latency || mic.error || (mic.state !== "off" && mic.state !== "ready")) && (
-        <p className="border-t border-slate-800 px-4 py-1.5 text-xs text-slate-400" aria-live="polite">
+        <p className="border-t border-cyan-400/15 px-4 py-1.5 text-xs text-cyan-200/70" aria-live="polite">
           {mic.error
             ? mic.error
             : mic.state === "listening"
@@ -159,7 +122,7 @@ export default function ChatPanel({
                   : mic.latency}
         </p>
       )}
-      <form onSubmit={submit} className="flex items-end gap-2 border-t border-slate-800 p-3">
+      <form onSubmit={submit} className="flex items-end gap-2 border-t border-cyan-400/15 p-3">
         {mic && <MicButton mic={mic} />}
         <textarea
           aria-label="Nachricht an Cat"
@@ -168,14 +131,15 @@ export default function ChatPanel({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           maxLength={4000}
+          autoFocus
           placeholder={connected ? "Nachricht an Cat …" : "Keine Verbindung …"}
           disabled={!connected}
-          className="max-h-32 min-h-[2.5rem] flex-1 resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400 disabled:opacity-50"
+          className="max-h-32 min-h-[2.5rem] flex-1 resize-none rounded-xl border border-cyan-400/25 bg-black/50 px-3 py-2 text-sm outline-none focus:border-cyan-300 disabled:opacity-50"
         />
         <button
           type="submit"
           disabled={!connected || busy || draft.trim() === ""}
-          className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 disabled:opacity-40"
+          className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-200 disabled:opacity-40"
         >
           Senden
         </button>

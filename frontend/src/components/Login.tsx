@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { login } from "../api";
-import Orb from "./Orb";
+import CatCore from "./hud/CatCore";
 
 export default function Login({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState("");
@@ -23,11 +23,13 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-8 p-6">
-      <Orb state={busy ? "thinking" : "idle"} />
+    <main className="hud-bg flex min-h-dvh flex-col items-center justify-center gap-6 p-6">
+      <div className="h-56 w-56">
+        <CatCore state={busy ? "thinking" : "idle"} />
+      </div>
       <form
         onSubmit={submit}
-        className="flex w-full max-w-xs flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 backdrop-blur"
+        className="hud-panel flex w-full max-w-xs flex-col gap-3 p-5"
       >
         <h1 className="text-center text-lg font-semibold tracking-widest uppercase">Cat</h1>
         <label className="flex flex-col gap-1 text-sm text-slate-300">

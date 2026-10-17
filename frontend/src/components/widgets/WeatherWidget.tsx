@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { WidgetState } from "../../state/store";
-import { WidgetCard } from "../WidgetColumn";
+import { HudPanel as WidgetCard } from "../hud/Hud";
 import { formatClock, formatNumber, num, weekday } from "./format";
 
 interface Day {
@@ -50,7 +50,7 @@ export default function WeatherWidget({
       }}
       disabled={pending}
       aria-label="Wetter aktualisieren"
-      className="rounded-md border border-slate-700 px-2 py-0.5 text-xs text-slate-300 transition hover:border-slate-500 disabled:opacity-50"
+      className="hud-btn rounded-md px-2 py-0.5 text-xs disabled:opacity-50"
     >
       {pending ? "…" : "Aktualisieren"}
     </button>
@@ -58,7 +58,7 @@ export default function WeatherWidget({
 
   return (
     <WidgetCard title={place ? `${widget.title} · ${place}` : widget.title} action={refresh}>
-      {widget.status === "loading" && temp === null && <p className="text-sm text-slate-500">Lade …</p>}
+      {widget.status === "loading" && temp === null && <p className="text-sm text-cyan-200/40">Lade …</p>}
       {widget.status === "error" && (
         <p role="alert" className="mb-2 text-sm text-rose-400">
           {widget.error ?? "Wetter nicht verfügbar"}
@@ -68,10 +68,10 @@ export default function WeatherWidget({
       {temp !== null && (
         <div className={widget.status === "error" ? "opacity-60" : undefined}>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-light tabular-nums">{formatNumber(temp, 0)} °C</span>
-            <span className="text-sm text-slate-300">{typeof d.label === "string" ? d.label : ""}</span>
+            <span className="hud-text-glow text-[clamp(1.8rem,5vh,3rem)] font-light tabular-nums text-cyan-50">{formatNumber(temp, 0)} °C</span>
+            <span className="text-sm text-cyan-100/80">{typeof d.label === "string" ? d.label : ""}</span>
           </div>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-cyan-200/60">
             Gefühlt {num(d.apparent) !== null ? `${formatNumber(num(d.apparent) ?? 0, 0)} °C` : "–"}
             {num(d.humidity) !== null ? ` · ${formatNumber(num(d.humidity) ?? 0)} % Luftfeuchte` : ""}
             {num(d.wind) !== null ? ` · Wind ${formatNumber(num(d.wind) ?? 0)} km/h` : ""}
@@ -80,9 +80,9 @@ export default function WeatherWidget({
             <ul className="mt-3 grid gap-1 text-xs" aria-label="Vorhersage">
               {days.map((day) => (
                 <li key={day.date} className="flex items-baseline justify-between gap-2">
-                  <span className="w-8 text-slate-400">{weekday(day.date)}</span>
-                  <span className="min-w-0 flex-1 truncate text-slate-300">{day.label}</span>
-                  <span className="tabular-nums text-slate-200">
+                  <span className="w-8 text-cyan-200/60">{weekday(day.date)}</span>
+                  <span className="min-w-0 flex-1 truncate text-cyan-100/80">{day.label}</span>
+                  <span className="tabular-nums text-cyan-50">
                     {day.tmin !== null ? Math.round(day.tmin) : "–"}° / {day.tmax !== null ? Math.round(day.tmax) : "–"}°
                   </span>
                 </li>
@@ -90,7 +90,7 @@ export default function WeatherWidget({
             </ul>
           )}
           {widget.updatedAt !== null && widget.status === "ok" && (
-            <p className="mt-2 text-[0.7rem] text-slate-500">Stand {formatClock(widget.updatedAt)} Uhr</p>
+            <p className="mt-2 text-[0.7rem] text-cyan-200/40">Stand {formatClock(widget.updatedAt)} Uhr</p>
           )}
         </div>
       )}
