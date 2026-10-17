@@ -76,6 +76,7 @@ async def handle_user_text(
         if state.learner.enabled:
             fast = await _try_learned(state, text, room)
             if fast is not None:
+                user.tooled = True
                 if on_delta:
                     await on_delta(fast)
                 if manage_voice_state:
@@ -83,6 +84,7 @@ async def handle_user_text(
                 return Reply(fast, time.perf_counter() - started, fastpath=True)
 
         responding = time.perf_counter()
+        state.turn_tooled = False
         assistant_id = uuid.uuid4().hex
         assistant = ChatMessage(id=assistant_id, role="assistant", text="", ts=_now())
         # Leere Nachricht anlegen, damit das Frontend die Blase sofort zeigt.
@@ -103,6 +105,7 @@ async def handle_user_text(
             await state.emit(ErrorEvent(message="Die Antwort ist fehlgeschlagen. Details im Log."))
         finally:
             assistant.text = "".join(parts)
+            assistant.tooled = user.tooled = state.turn_tooled
             log.info(
                 "Dialog: vorher %.2f s, Lernprüfung %.2f s, Antwort %.1f s (erste Ausgabe %s)",
                 checked - started,
@@ -130,7 +133,9 @@ async def _try_learned(state: AppState, text: str, room: str | None) -> str | No
         return None
     if result is None:
         return None
-    answer = ChatMessage(id=uuid.uuid4().hex, role="assistant", text=result.text, ts=_now())
+    answer = ChatMessage(
+        id=uuid.uuid4().hex, role="assistant", text=result.text, ts=_now(), tooled=True
+    )
     state.chat.append(answer)
     state.memory.sessions.append("assistant", answer.text)
     await state.emit(answer)

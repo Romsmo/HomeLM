@@ -42,6 +42,7 @@ class AppState:
         self.auth = Auth(settings)
         self.hub = Hub()
         self.chat: list[ChatMessage] = []
+        self.turn_tooled = False  # hat die laufende Runde Werkzeuge benutzt?
         self.stage = StageStore()
         self.widgets: dict[str, WidgetUpdate] = {}
         self.run_lock = asyncio.Lock()
@@ -87,6 +88,7 @@ class AppState:
         context: list[tuple[str, str]] | None = None,
     ) -> None:
         """Nach einer vom Modell gelösten Anfrage: daraus lernen und es dem Nutzer sagen."""
+        self.turn_tooled = bool(trace)
         try:
             learned = self.learner.observe(question, trace, room, previous_device, context)
         except Exception:

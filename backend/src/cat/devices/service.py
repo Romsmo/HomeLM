@@ -92,6 +92,7 @@ class DeviceService:
             if spec.listed:
                 for text in (spec.name, spec.room, *spec.synonyms):
                     stems.update(_stems(text))
+        stems.update(TYPE_STEMS)
         self._stems = stems
 
     def set_discovered(self, specs: list[DeviceSpec]) -> None:
@@ -404,6 +405,13 @@ class DeviceService:
         shown = f"{info.state} {info.unit}".strip() if info.state is not None else "unbekannt"
         text = f"Befehl gesendet: {what}. Zustand jetzt: {shown}."
         return CommandResult(spec, command, text, info)
+
+
+# Allgemeine Gerätewörter (Wortanfänge), auch wenn sie in keinem Gerätenamen vorkommen.
+TYPE_STEMS = frozenset(
+    "licht lampe leuch rolla rollo jalou schal dimme heizu therm tuer tuere schlo garag steck "
+    "fenst gerae".split()
+)
 
 
 def _stems(text: str) -> set[str]:

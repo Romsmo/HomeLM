@@ -205,6 +205,7 @@ async def test_a_vague_device_word_does_not_block_a_plain_answer(tmp_path: Path)
 
 def test_mentions_device_uses_words_from_the_house(tmp_path: Path) -> None:
     service, _ = make(tmp_path)
+    assert service.mentions_device("Welche Lichter sind an?")
     assert service.mentions_device("Sind die Rollos offen?")
     assert service.mentions_device("Mach das Deckenlicht an")
     assert not service.mentions_device("Wie wird das Wetter morgen?")
@@ -322,6 +323,28 @@ async def test_questions_are_learned_after_one_time_but_commands_need_two(tmp_pa
     assert learner.observe("Schalte Deckenlicht Roman aus", cmd) is not None
     rows = {r["phrase"]: r for r in learner.listing()}
     assert rows["ist das {dev} an"]["needed"] == 1 and rows["schalte {dev} aus"]["needed"] == 2
+
+
+async def test_tool_turns_are_marked_so_the_local_model_does_not_copy_them(
+    tmp_path: Path,
+) -> None:
+    from cat.dialog import handle_user_text
+
+    state = AppState(Settings(_env_file=None, data_dir=tmp_path))  # type: ignore[call-arg]
+
+    class Tooled:
+        async def reply(self, history, spoken=False, room=None):  # type: ignore[no-untyped-def]
+            await state.learn_from("Licht an", [ToolTrace("set_state", {}, True, "")])
+            yield "Okay."
+
+    from cat.agent.tools import ToolTrace
+
+    state.responder = Tooled()
+    await handle_user_text(state, "Licht an")
+    assert [m.tooled for m in state.chat] == [True, True]
+    state.responder = None  # Echo-Antwort ohne Werkzeuge
+    await handle_user_text(state, "Hallo")
+    assert [m.tooled for m in state.chat][2:] == [False, False]
 
 
 def test_defaults_favour_speed() -> None:

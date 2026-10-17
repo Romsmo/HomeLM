@@ -28,6 +28,9 @@ class ChatMessage(_Event):
     role: Role
     text: str
     ts: float
+    # Runde mit Werkzeugen/Kurzbefehl: bleibt aus dem Verlauf des lokalen Modells (es ahmt sonst
+    # "Okay, Licht ist aus" nach, statt das Werkzeug aufzurufen).
+    tooled: bool = False
 
 
 class ChatDelta(_Event):

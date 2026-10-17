@@ -148,7 +148,8 @@ class RoutedResponder:
             )
             if p
         )
-        messages = to_llm_messages([(m.role, m.text) for m in history])
+        # Ohne Geräte-Runden: Das Modell soll Werkzeuge nutzen, nicht frühere Antworten kopieren.
+        messages = to_llm_messages([(m.role, m.text) for m in history if not m.tooled])
         shown = False
         head = ""  # Anfang der Antwort, solange noch nicht klar ist, ob es eine Absage ist
         deciding = self._available()
