@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 
 from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
@@ -80,6 +81,7 @@ class Agent:
             # Unbelegte Behauptungen über Geräte abfangen, solange noch kein Gerätewerkzeug lief.
             hold = guard and not any(t.tool in DEVICE_TOOLS for t in ctx.trace)
 
+            model_started = time.perf_counter()
             async for event in self._provider.stream(system, messages, schemas):
                 if not isinstance(event, TextDelta):
                     calls.append(event)
@@ -104,6 +106,7 @@ class Agent:
                 started = True
                 yield event.text
 
+            model_s = time.perf_counter() - model_started
             if held:
                 joined = "".join(held)
                 if claims_action(joined) and not calls:
@@ -130,6 +133,7 @@ class Agent:
                 ctx.escalation = Escalation("model", question if isinstance(question, str) else "")
                 return
             messages.append(_assistant_message("".join(step_text), calls))
+            tools_started = time.perf_counter()
             ready = len(ctx.final_replies)
             ok_count = 0
             for call in calls:
@@ -137,6 +141,12 @@ class Agent:
                 ok_count += ctx.trace[-1].ok
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             fresh = ctx.final_replies[ready:]
+            log.info(
+                "Zug: Modell %.1f s, Werkzeuge %.1f s (%s)",
+                model_s,
+                time.perf_counter() - tools_started,
+                ", ".join(c.name for c in calls),
+            )
             if ok_count == len(calls) and len(fresh) == len(calls):
                 # Jedes Werkzeug lieferte seinen fertigen Antworttext: kein zweiter Modellaufruf.
                 yield ("\n\n" if wrote_text else "") + "\n".join(fresh)
