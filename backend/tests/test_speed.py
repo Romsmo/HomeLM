@@ -198,6 +198,26 @@ async def test_a_command_that_is_only_announced_after_reading_the_state_is_execu
     assert out == "Okay, Deckenlicht Roman ist aus." and backend.sent == [("roman", "off")]
 
 
+async def test_a_command_that_contradicts_the_users_words_is_not_sent(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider(
+        [ToolCall("c1", "set_state", {"device": "Deckenlicht Roman", "command": "on"})],
+        [ToolCall("c2", "set_state", {"device": "Deckenlicht Roman", "command": "off"})],
+    )
+    out, _ = await run(agent_for(service, provider), "Mach das Deckenlicht von Roman aus", True)
+    assert backend.sent == [("roman", "off")] and out == "Okay, Deckenlicht Roman ist aus."
+
+
+def test_power_conflict_only_fires_for_a_clear_direction() -> None:
+    from cat.intents.text import power_conflict
+
+    assert power_conflict("Mach das Licht aus", "on") == "aus"
+    assert power_conflict("Schalte das Licht ein", "off") == "an"
+    assert power_conflict("Mach das Licht aus", "off") is None
+    assert power_conflict("Mach das eine an und das andere aus", "on") is None
+    assert power_conflict("Stell den Rollo auf 50", "50") is None
+
+
 async def test_device_talk_without_a_tool_is_not_shown_unverified(tmp_path: Path) -> None:
     service, _ = make(tmp_path)
     provider = FakeProvider(

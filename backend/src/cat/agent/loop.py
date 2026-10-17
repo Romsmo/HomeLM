@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
 from cat.audit import AuditLog
 from cat.intents.claims import claims_action
-from cat.intents.text import is_question
+from cat.intents.text import is_question, power_conflict
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
@@ -150,11 +150,12 @@ class Agent:
                 ctx.escalation = Escalation("model", question if isinstance(question, str) else "")
                 return
             messages.append(_assistant_message("".join(step_text), calls))
+            user_text = _last_user_text(history)
             tools_started = time.perf_counter()
             ready = len(ctx.final_replies)
             ok_count = 0
             for call in calls:
-                result = await self._execute(call, ctx)
+                result = await self._execute(call, ctx, user_text)
                 ok_count += ctx.trace[-1].ok
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             fresh = ctx.final_replies[ready:]
@@ -182,20 +183,30 @@ class Agent:
         if warm is not None:
             await warm(self._system_prompt(), self._registry.schemas())
 
-    async def _execute(self, call: ToolCall, ctx: ToolContext) -> str:
+    async def _execute(self, call: ToolCall, ctx: ToolContext, user_text: str = "") -> str:
         """Führt ein Werkzeug aus und protokolliert jeden Aufruf (auch Fehlschläge)."""
-        result, ok = await self._run_tool(call, ctx)
+        result, ok = await self._run_tool(call, ctx, user_text)
         ctx.trace.append(ToolTrace(call.name, call.arguments or {}, ok, result))
         if self._audit is not None:
             await self._audit.record(call.name, call.arguments, result, ok=ok, source="agent")
         return result
 
-    async def _run_tool(self, call: ToolCall, ctx: ToolContext) -> tuple[str, bool]:
+    async def _run_tool(
+        self, call: ToolCall, ctx: ToolContext, user_text: str = ""
+    ) -> tuple[str, bool]:
         tool = self._registry.get(call.name)
         if tool is None:
             return f"Fehler: Das Werkzeug '{call.name}' gibt es nicht.", False
         if call.arguments is None:
             return "Fehler: Die Argumente sind kein gültiges JSON-Objekt.", False
+        if call.name == "set_state" and (
+            word := power_conflict(user_text, str(call.arguments.get("command", "")).lower())
+        ):
+            return (
+                f'Fehler: Der Nutzer hat "{word}" gesagt, du hast aber das Gegenteil gesendet. '
+                "Nichts wurde geschaltet. Rufe set_state mit dem richtigen Befehl noch einmal auf.",
+                False,
+            )
         try:
             return await tool.handler(call.arguments, ctx), True
         except ToolError as exc:

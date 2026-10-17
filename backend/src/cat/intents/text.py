@@ -79,3 +79,21 @@ def is_question(text: str) -> bool:
     """Fragezeichen oder Fragewort am Anfang. Sprachtexte haben nicht immer ein Fragezeichen."""
     tokens = tokenize(text)
     return "?" in text or bool(tokens) and tokens[0] in QUESTION_STARTS
+
+
+_ON_WORDS = frozenset("an ein anmachen anschalten einschalten einmachen aktivieren".split())
+_OFF_WORDS = frozenset("aus ausmachen ausschalten abschalten deaktivieren".split())
+
+
+def power_conflict(user_text: str, command: str) -> str | None:
+    """Sagt der Nutzer "aus", das Modell sendet aber "on" (oder umgekehrt)? Dann das Wort des
+    Nutzers, sonst None. Nur bei eindeutiger Richtung (nicht "das eine an, das andere aus")."""
+    tokens = set(tokenize(user_text))
+    wants_on, wants_off = bool(tokens & _ON_WORDS), bool(tokens & _OFF_WORDS)
+    if wants_on == wants_off:
+        return None
+    if command == "on" and wants_off:
+        return "aus"
+    if command == "off" and wants_on:
+        return "an"
+    return None
