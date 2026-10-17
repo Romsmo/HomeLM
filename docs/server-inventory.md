@@ -1,6 +1,6 @@
 # Server-Inventar (Stand 2026-10-17, nur lesend erhoben, ohne Secrets)
 
-Erhoben per SSH als Benutzer `catscastle` (kein Docker-Zugriff, kein sudo ohne Passwort). Es wurde nichts geändert. **Lücke:** `docker ps`, `docker stats`, `docker network ls` und die nftables-Regeln konnten nicht gelesen werden (siehe "Nicht geprüft").
+Erhoben per SSH als Benutzer `catscastle`. Zuerst ohne Docker-Zugriff, nach Aufnahme in die Gruppe `docker` (durch den Nutzer) auch mit `docker ps/stats/network ls`. Es wurde nichts geändert. nftables bleibt ungelesen (siehe "Nicht geprüft").
 
 ## Rechner
 
@@ -53,6 +53,20 @@ openHAB: `GET http://127.0.0.1:8080/rest/` antwortet mit HTTP 200. Konfiguration
 
 openHAB-JVM ca. 1,1 GB, Trafficnetwork-Node ca. 220 MB, PostgreSQL-Prozesse zusammen ca. 0,9 GB (mit geteiltem Speicher), dockerd ca. 125 MB, Apache/Nextcloud ca. 60 MB, MariaDB ca. 60 MB.
 
+## Container (Stand 2026-10-17, `docker ps -a`, `docker stats`)
+
+| Container | Status | RAM |
+|---|---|---|
+| docker-openhab-1 (4.2.2) | healthy, 6 Tage | 1,12 GiB |
+| trafficnetwork-server-postgres-1 (PostGIS 16) | healthy, 6 Tage | 1,67 GiB (inkl. Cache) |
+| trafficnetwork-server-server-1 | healthy, 3 Tage | 253 MiB |
+| docker-app-1 / docker-cron-1 (Nextcloud 33) | 6 Tage | 140 MiB / 14 MiB |
+| docker-db-1 (MariaDB 11.4) / docker-redis-1 | 6 Tage | 62 MiB / 3 MiB |
+| docker-caddy-1 / docker-portainer-1 / docker-cloudflare-ddns-1 | 6 Tage | 49 / 40 / 23 MiB |
+| tn-ingest (ingestion) | **Exited (0) vor 8 Tagen** (kein Fehler, läuft nicht dauerhaft) | |
+
+Keine Container haben ein `mem_limit` (Limit zeigt die gesamten 7,5 GiB). Docker-Netzwerke: `docker_proxy` (Caddy, Nextcloud, Portainer), `docker_backend` (DB, Redis), `trafficnetwork` (extern), `docker_default`, `bridge`. Caddy hängt in `docker_proxy` und `trafficnetwork`. Volumes: u. a. `trafficnetwork-server_postgres-data`, `docker_caddy_data`, `docker_portainer_data` (zusammen 23 GB). Docker-Images 5,7 GB, Build-Cache 2,2 GB (1,3 GB räumbar, wird nicht angefasst).
+
 ## Abweichungen von `CLAUDE.md` Abschnitt 2
 
 1. **RAM ist 7,5 GiB, kein Upgrade erfolgt.** Es wird schon etwas ausgelagert (596 MiB Swap).
@@ -65,7 +79,6 @@ openHAB-JVM ca. 1,1 GB, Trafficnetwork-Node ca. 220 MB, PostgreSQL-Prozesse zusa
 
 ## Nicht geprüft (braucht Docker- oder Root-Rechte)
 
-- Laufende Container, Neustart-Zähler, `docker stats`, Docker-Netzwerke und deren Namen (Bridges `br-…` sind sichtbar, die Zuordnung nicht).
 - Welche Quell-IP Caddy tatsächlich sieht (Hintergrund: Portainer liefert aus dem LAN 403).
 - nftables inklusive Tabelle `ohtunnel`, ob der IoT-Weg über `wlan0` funktioniert.
-- Inhalt der `.env` (bewusst nicht gelesen), Container `ingestion` und sein Zustand `europe-data`.
+- Inhalt der `.env` (bewusst nicht gelesen), Zustand `europe-data` von `ingestion` (wird nicht angefasst).

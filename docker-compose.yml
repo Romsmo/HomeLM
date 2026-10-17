@@ -4,6 +4,7 @@ services:
   backend:
     # Liefert API und das gebaute Frontend aus (ein Container, kein extra Webserver).
     build: .
+    image: homelm-backend:latest
     container_name: homelm-backend
     restart: unless-stopped
     env_file:
@@ -12,7 +13,10 @@ services:
     ports:
       # Standard: nur lokal. Auf dem Server CAT_BIND_ADDR=192.168.0.10 setzen, nie 0.0.0.0.
       - "${CAT_BIND_ADDR:-127.0.0.1}:${CAT_HOST_PORT:-8090}:8000"
+    # Auf dem Server CAT_UID/CAT_GID auf den Besitzer von ./data setzen (Bind-Mount).
+    user: "${CAT_UID:-10001}:${CAT_GID:-10001}"
     environment:
+      HOME: /tmp
       # Datenträger-Widget: Partition des Datenordners (nicht das Overlay-Dateisystem des Containers).
       CAT_DISK_PATH: /data
     volumes:
