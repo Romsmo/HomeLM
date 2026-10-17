@@ -100,6 +100,14 @@ class ConfirmResolved(_Event):
     id: str
 
 
+class ProviderState(_Event):
+    """Welches Sprachmodell gerade antwortet (offline=True: lokales Fallback-Modell)."""
+
+    type: Literal["provider.state"] = "provider.state"
+    name: str
+    offline: bool
+
+
 class ErrorEvent(_Event):
     type: Literal["error"] = "error"
     message: str
@@ -118,6 +126,7 @@ ServerEvent = (
     | DeviceStateEvent
     | ConfirmRequest
     | ConfirmResolved
+    | ProviderState
     | ErrorEvent
 )
 
@@ -180,6 +189,7 @@ SERVER_EVENT_TYPES = (
     "device.state",
     "confirm.request",
     "confirm.resolved",
+    "provider.state",
     "error",
 )
 CLIENT_EVENT_TYPES = (

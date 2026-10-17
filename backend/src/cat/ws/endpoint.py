@@ -42,6 +42,7 @@ async def _replay(state: AppState, conn: Connection) -> None:
     for widget in state.widgets.values():
         await conn.send(widget)
     await conn.send(state.devices.list_event())
+    await conn.send(state.provider_state)
 
 
 @router.websocket("/ws")

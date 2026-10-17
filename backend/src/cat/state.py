@@ -11,9 +11,11 @@ from cat.devices.service import DeviceService
 from cat.intents.fastpath import FastPath
 from cat.intents.vocabulary import load_vocabulary
 from cat.memory.service import MemoryService
+from cat.plugins.pending import PendingPlugins
+from cat.sandbox.client import SandboxClient
 from cat.stage.store import StageStore
 from cat.ws.hub import Hub
-from cat.ws.protocol import ChatMessage, ServerEvent, WidgetUpdate
+from cat.ws.protocol import ChatMessage, ProviderState, ServerEvent, WidgetUpdate
 
 
 class Responder(Protocol):
@@ -44,12 +46,20 @@ class AppState:
             self.audit,
             self.confirm,
         )
+        self.provider_state = ProviderState(name=settings.llm_model, offline=False)
         self.memory = MemoryService(
             settings.memory_dir, settings.sessions_dir, settings.session_log
         )
+        self.sandbox = SandboxClient(settings.sandbox_dir)
+        self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fastpath = FastPath(self.devices, load_vocabulary(settings.synonyms_file))
         # Wird vom Plugin-Manager gesetzt (Phase 3): Widget neu laden, True bei Erfolg.
         self.widget_refresher: Callable[[str], Awaitable[bool]] | None = None
+
+    async def set_provider(self, name: str, offline: bool) -> None:
+        """Vom Fallback-Anbieter aufgerufen, wenn das antwortende Modell wechselt."""
+        self.provider_state = ProviderState(name=name, offline=offline)
+        await self.emit(self.provider_state)
 
     async def emit(self, event: ServerEvent) -> None:
         await self.hub.broadcast(event)

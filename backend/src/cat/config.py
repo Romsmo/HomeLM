@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # LLM (Phase 2). Der Schlüssel steht nur in der .env auf dem Server.
     llm_model: str = "anthropic/claude-haiku-5-5"
     llm_max_tokens: int = 1500
+    # Offline-Fallback (Phase 9): leer = aus. Beispiel: ollama/qwen3:4b (braucht ca. 3 GB RAM,
+    # siehe docs/offline.md). Übernimmt nur, wenn der Cloud-Anbieter nicht erreichbar ist.
+    fallback_model: str = ""
+    ollama_url: str = "http://ollama:11434"
+    # Wartezeit auf den Cloud-Anbieter, wenn ein Fallback konfiguriert ist (schnell umschalten).
+    llm_timeout_s: float = 20.0
+    fallback_cooldown_s: float = 60.0
     agent_max_steps: int = 6
     anthropic_api_key: SecretStr | None = Field(
         default=None,
@@ -47,6 +54,8 @@ class Settings(BaseSettings):
     session_log: bool = True
     # Alte Gespräche per LLM in Notizen zusammenfassen (braucht Internet und API-Schlüssel).
     summarize_sessions: bool = True
+    # Code-Sandbox (Phase 9): Tool run_python, Container homelm-sandbox ohne Netzwerk.
+    sandbox: bool = True
     # Fast-Path: Gerätebefehle ohne LLM (Phase 5). Abschaltbar zum Vergleichen.
     fastpath: bool = True
     # openHAB (Phase 4). Token optional (lokal ist die REST-API oft offen).
@@ -64,6 +73,14 @@ class Settings(BaseSettings):
     weather_lon: float | None = None
     weather_name: str = ""
     weather_ttl_s: float = 600.0
+
+    @property
+    def sandbox_dir(self) -> Path:
+        return self.data_dir / "sandbox"
+
+    @property
+    def plugins_dir(self) -> Path:
+        return self.data_dir / "plugins"
 
     @property
     def memory_dir(self) -> Path:

@@ -9,6 +9,11 @@ const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
   closed: { label: "Getrennt, verbinde neu …", dot: "bg-rose-500 animate-pulse" },
 };
 
+/** "anthropic/claude-haiku-5-5" -> "claude-haiku-5-5" */
+export function shortModel(name: string): string {
+  return name.includes("/") ? name.slice(name.indexOf("/") + 1) : name;
+}
+
 function useNow(intervalMs = 1000): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -21,10 +26,12 @@ function useNow(intervalMs = 1000): Date {
 export default function Header({
   connection,
   weather,
+  provider,
   onLogout,
 }: {
   connection: ConnectionStatus;
   weather: WidgetState | undefined;
+  provider?: { name: string; offline: boolean } | null;
   onLogout: () => void;
 }) {
   const now = useNow();
@@ -37,6 +44,19 @@ export default function Header({
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${status.dot}`} aria-hidden />
           {status.label}
         </div>
+        {provider && (
+          <span
+            data-testid="provider-badge"
+            title={provider.name}
+            className={`rounded-full border px-2.5 py-0.5 text-xs ${
+              provider.offline
+                ? "border-amber-500/70 bg-amber-950/50 text-amber-300"
+                : "border-slate-700 text-slate-400"
+            }`}
+          >
+            {provider.offline ? "Offline-Modell" : "Modell"}: {shortModel(provider.name)}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-5 text-sm">
         <span className="text-slate-300" data-testid="header-weather">

@@ -20,7 +20,12 @@ export default function Dashboard({
 
   return (
     <div className="flex h-dvh flex-col">
-      <Header connection={state.connection} weather={state.widgets.weather} onLogout={onLogout} />
+      <Header
+        connection={state.connection}
+        weather={state.widgets.weather}
+        provider={state.provider}
+        onLogout={onLogout}
+      />
 
       {state.notice && (
         <div

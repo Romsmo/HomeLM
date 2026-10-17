@@ -11,7 +11,16 @@ ToolSchema = dict[str, Any]
 
 
 class LLMError(Exception):
-    """Fehler mit einer Meldung, die dem Nutzer gezeigt werden darf (ohne Geheimnisse)."""
+    """Fehler mit einer Meldung, die dem Nutzer gezeigt werden darf (ohne Geheimnisse).
+
+    `unavailable` heißt: Der Anbieter ist nicht erreichbar oder überlastet (Internet weg,
+    Ausfall, Limit). Nur dann darf auf ein Offline-Modell umgeschaltet werden. Falsche
+    Schlüssel oder Modellnamen (`unavailable=False`) müssen den Nutzer erreichen.
+    """
+
+    def __init__(self, message: str, unavailable: bool = False) -> None:
+        super().__init__(message)
+        self.unavailable = unavailable
 
 
 @dataclass(frozen=True)

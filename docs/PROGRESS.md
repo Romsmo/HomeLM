@@ -178,3 +178,21 @@
 
 **Offene Punkte**
 - Notizen und Sitzungsverläufe liegen im Klartext in `data/`: in die Sicherung aufnehmen.
+
+## Phase 9: Offline-Fallback, Sandbox, eigene Integrationen
+
+**Gebaut**
+- **Offline-Fallback** (`llm/fallback.py`, Doku `docs/offline.md`): `FallbackProvider` schaltet auf ein lokales Modell (Ollama, Standardvorschlag `ollama/qwen3:4b`), wenn der Cloud-Anbieter **nicht erreichbar** ist (nicht bei falschem Schlüssel oder Modellnamen, nie mitten in einer Antwort), mit 60 s Abkühlzeit, damit nicht jede Nachricht in den Timeout läuft. Qwen3-Denkblöcke werden entfernt (`ThinkFilter`, `/no_think`). Neues Ereignis `provider.state`; der Kopf zeigt "Modell: ..." bzw. gelb **"Offline-Modell: ..."**. Der Ollama-Container (`mem_limit 3,5 GB`, Modell entlädt nach 2 Minuten) liegt hinter dem Compose-Profil `offline`.
+- **Code-Sandbox** (`sandbox/`, `cat/sandbox/`, Doku `docs/sandbox.md`): Tool `run_python` in eigenem Container ohne Netzwerk, schreibgeschützt, ohne Capabilities, 512 MB, 64 Prozesse; Datei-Austausch statt Docker-Socket; Text und PNG-Diagramme gehen an Modell bzw. Stage.
+- **Eigene Integrationen** (`plugins/pending.py`, `plugins/external.py`, Doku `docs/plugins-pending.md`): `propose_plugin` legt Vorschläge nur in `data/plugins/pending/` ab; geladen wird nur von Hand Freigegebenes aus `active/`, und nur wenn es in `CAT_PLUGINS` steht.
+
+**Entscheidung zum RAM (wie vom Nutzer vorgegeben):** Der Server hat 7,5 GB RAM (kein Upgrade), davon verfügbar rund 5 GB inklusive Datenbank-Cache, bei bereits belegtem Swap. Ein geladenes Qwen3-4B braucht 3 bis 3,5 GB. Der Fallback ist daher **vorerst deaktiviert** (`CAT_FALLBACK_MODEL` leer, Ollama-Container nicht gestartet). Die Umschaltlogik ist vollständig gebaut und getestet, sie wird mit einem RAM-Upgrade nur noch eingeschaltet (Schritte in `docs/offline.md`). Fast-Path und Geräteanzeige laufen auch ohne Internet.
+
+**Abnahme (lokal, Tests): bestanden**
+- Cloud nicht erreichbar -> Fallback antwortet, Anzeige wechselt auf "Offline-Modell", nach der Abkühlzeit zurück; Konfigurationsfehler werden nicht verdeckt (Backend-Tests, inkl. WebSocket-Ende-zu-Ende).
+- Python-Code nur über den Sandbox-Client, nie im Cat-Prozess; Ergebnis, Fehler, Zeitlimit, Bilder, tote Sandbox getestet. Ein erzeugtes Plugin ist ohne Freigabe inaktiv (auch bei Eintrag in `CAT_PLUGINS`), Vorschläge werden nie ausgeführt.
+- Backend 309 Tests (1 übersprungen: der echte Worker braucht POSIX, wird auf dem Server in Docker geprüft).
+- **Nicht geprüft:** Ollama/Qwen3 mit echtem Modell (bewusst nicht aktiviert, siehe RAM-Entscheidung; Antwortzeit und Qualität bleiben unbekannt), "Internet getrennt" am echten Server.
+
+**Gefundene und behobene Fehler**
+- `ThinkFilter` gab einen zurückgehaltenen Tag-Anfang am Ende nie frei (Antwort "x <th" verlor Text): `flush()` ergänzt.

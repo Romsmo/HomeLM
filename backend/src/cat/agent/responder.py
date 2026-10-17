@@ -8,8 +8,12 @@ from cat.agent.tools import Tool, ToolContext, ToolRegistry
 from cat.devices.service import DeviceService
 from cat.devices.tools import build_device_tools
 from cat.llm.base import LLMError, LLMProvider
+from cat.llm.fallback import FallbackProvider
 from cat.llm.litellm_provider import LiteLLMProvider
 from cat.memory.service import MemoryService, build_memory_tools
+from cat.plugins.pending import PendingPlugins, build_pending_tools
+from cat.sandbox.client import SandboxClient
+from cat.sandbox.tools import build_sandbox_tools
 from cat.stage.tools import register_stage_tools
 from cat.state import AppState
 from cat.ws.protocol import ChatMessage
@@ -42,6 +46,8 @@ def build_registry(
     extra_tools: Sequence[Tool] = (),
     devices: DeviceService | None = None,
     memory: MemoryService | None = None,
+    sandbox: SandboxClient | None = None,
+    pending: PendingPlugins | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     register_stage_tools(registry)
@@ -50,6 +56,12 @@ def build_registry(
             registry.register(tool)
     if memory is not None:
         for tool in build_memory_tools(memory):
+            registry.register(tool)
+    if sandbox is not None:
+        for tool in build_sandbox_tools(sandbox):
+            registry.register(tool)
+    if pending is not None:
+        for tool in build_pending_tools(pending):
             registry.register(tool)
     for tool in extra_tools:
         registry.register(tool)
@@ -62,16 +74,52 @@ def build_responder(
     extra_tools: Sequence[Tool] = (),
 ) -> AgentResponder:
     settings = state.settings
-    provider = provider or LiteLLMProvider(
-        model=settings.llm_model,
-        api_key=settings.anthropic_api_key,
-        max_tokens=settings.llm_max_tokens,
-    )
+    provider = provider or _build_provider(state)
     agent = Agent(
         provider=provider,
-        registry=build_registry(extra_tools, devices=state.devices, memory=state.memory),
+        registry=build_registry(
+            extra_tools,
+            devices=state.devices,
+            memory=state.memory,
+            sandbox=state.sandbox if settings.sandbox else None,
+            pending=state.pending_plugins,
+        ),
         system_prompt=build_system_prompt,
         max_steps=settings.agent_max_steps,
         audit=state.audit,
     )
     return AgentResponder(state, agent)
+
+
+def _build_provider(state: AppState) -> LLMProvider:
+    """Cloud-Modell, mit Offline-Fallback wenn `CAT_FALLBACK_MODEL` gesetzt ist."""
+    settings = state.settings
+    if not settings.fallback_model:
+        return LiteLLMProvider(
+            model=settings.llm_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=settings.llm_max_tokens,
+        )
+    primary = LiteLLMProvider(
+        model=settings.llm_model,
+        api_key=settings.anthropic_api_key,
+        max_tokens=settings.llm_max_tokens,
+        timeout_s=settings.llm_timeout_s,
+    )
+    local = LiteLLMProvider(
+        model=settings.fallback_model,
+        max_tokens=settings.llm_max_tokens,
+        api_base=settings.ollama_url,
+        timeout_s=180.0,  # lokale Modelle auf der CPU brauchen länger bis zum ersten Wort
+        # Qwen3 denkt standardmäßig laut: "/no_think" schaltet das ab, Reste filtert ThinkFilter.
+        system_suffix=" /no_think" if "qwen3" in settings.fallback_model else "",
+        strip_think=True,
+    )
+    return FallbackProvider(
+        primary,
+        local,
+        primary_name=settings.llm_model,
+        fallback_name=settings.fallback_model,
+        cooldown_s=settings.fallback_cooldown_s,
+        on_change=state.set_provider,
+    )

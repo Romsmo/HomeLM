@@ -77,7 +77,7 @@ def audit_lines(tmp_path: Path) -> list[dict[str, Any]]:
 def test_device_list_on_connect_with_control_mode(tmp_path: Path) -> None:
     client, _ = make(tmp_path, "test")
     with client, client.websocket_connect("/ws") as ws:
-        listing = drain_replay(ws)[-1]
+        listing = next(e for e in drain_replay(ws) if e["type"] == "device.list")
         assert listing["control"] == "test" and listing["error"] is None
         devices = {d["id"]: d for d in listing["devices"]}
         assert set(devices) == {"licht", "rollo", "tuer"}

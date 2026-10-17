@@ -56,12 +56,12 @@ def test_history_replayed_and_clear(authed: TestClient) -> None:
         first, second = replay[0], replay[1]
         assert (first["role"], first["text"]) == ("user", "eins")
         assert (second["role"], second["text"]) == ("assistant", "Echo: eins")
-        assert replay[-1]["type"] == "device.list"
+        assert [e["type"] for e in replay[-2:]] == ["device.list", "provider.state"]
         ws.send_text(json.dumps({"type": "chat.clear"}))
         assert json.loads(ws.receive_text())["type"] == "chat.clear"
     with authed.websocket_connect("/ws") as ws:
         replay = drain_replay(ws)
-        assert [e["type"] for e in replay] == ["device.list"]
+        assert [e["type"] for e in replay] == ["device.list", "provider.state"]
 
 
 def test_invalid_message_gives_error(authed: TestClient) -> None:

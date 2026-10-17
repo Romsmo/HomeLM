@@ -90,6 +90,7 @@ def test_stage_history_replayed_on_reconnect_and_clearable(settings: Settings) -
                 "chat.message",
                 "stage.show",
                 "device.list",
+                "provider.state",
             ]
             ws.send_text(json.dumps({"type": "stage.clear"}))
             assert json.loads(ws.receive_text())["type"] == "stage.clear"

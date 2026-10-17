@@ -47,6 +47,7 @@ export interface CatState {
   control: ControlMode;
   deviceError: string | null;
   confirm: PendingConfirm | null;
+  provider: { name: string; offline: boolean } | null;
   notice: string | null;
 }
 
@@ -69,6 +70,7 @@ export const initialState: CatState = {
   control: "readonly",
   deviceError: null,
   confirm: null,
+  provider: null,
   notice: null,
 };
 
@@ -155,6 +157,8 @@ function applyServerEvent(state: CatState, event: ServerEvent): CatState {
           receivedAt: Date.now(),
         },
       };
+    case "provider.state":
+      return { ...state, provider: { name: event.name, offline: event.offline } };
     case "confirm.resolved":
       return state.confirm?.id === event.id ? { ...state, confirm: null } : state;
     case "error":

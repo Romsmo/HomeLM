@@ -84,6 +84,7 @@ export type ServerEvent =
       expires_in: number;
     }
   | { type: "confirm.resolved"; id: string }
+  | { type: "provider.state"; name: string; offline: boolean }
   | { type: "error"; message: string };
 
 // --- Browser -> Server ---
@@ -109,6 +110,7 @@ const SERVER_TYPES = new Set<string>([
   "device.state",
   "confirm.request",
   "confirm.resolved",
+  "provider.state",
   "error",
 ]);
 

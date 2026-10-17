@@ -26,6 +26,7 @@ Endpunkt: `GET /ws` (WebSocket), nur mit gültigem Sitzungs-Cookie (siehe unten)
 | `device.state` | `id`, `state`, `unit`, `online` | Zustandsänderung eines Geräts. |
 | `confirm.request` | `id`, `device`, `command`, `summary`, `expires_in` | Rückfrage für ein Gerät mit Risiko `high`. Der Server führt den Befehl nur nach `confirm.response` mit `approved: true` aus. |
 | `confirm.resolved` | `id` | Rückfrage ist erledigt (beantwortet, abgelaufen oder abgebrochen): Dialog schließen. |
+| `provider.state` | `name`, `offline` | Welches Sprachmodell gerade antwortet. `offline: true` heißt: das lokale Fallback-Modell, weil die Cloud nicht erreichbar ist. Wird beim Verbinden und bei jedem Wechsel gesendet. |
 | `error` | `message` | Fehlermeldung an den Nutzer. |
 
 Beim Verbinden sendet der Server zuerst den Chatverlauf (`chat.message`), dann die Stage-Historie (`stage.show`), die aktuellen Widget-Zustände (`widget.update`) und zuletzt die Geräteliste (`device.list`).
