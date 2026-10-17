@@ -29,7 +29,7 @@
 
 **Offene Punkte**
 - Weboberfläche hat noch **keine Authentifizierung** (kommt mit Phase 1, bevor ein anderer Bind als `127.0.0.1` verwendet wird).
-- Host-Port 8080 ist nicht gegen die Belegung auf dem Server geprüft (Schritt 2).
+- Host-Port: 8080 gehört auf dem Server openHAB, Cat nutzt deshalb 8090 (Inventar vom 2026-10-17).
 - `fastapi.testclient` meldet eine Deprecation-Warnung zu `httpx`; später beobachten.
 
 **Rollback**
