@@ -9,7 +9,8 @@ from cat.devices.service import DeviceService
 from cat.intents.replies import confirm_text, state_line
 from cat.ws.protocol import StageShow
 
-LIST_LIMIT = 40
+LIST_LIMIT = 25
+FULL_ROWS = 6  # bis dahin die vollständige Zeile (mit id), darüber kurz
 
 _TYPE_DE = {
     "light": "Licht",
@@ -22,6 +23,14 @@ _TYPE_DE = {
     "door": "Tür",
     "garage": "Garage",
 }
+
+
+def _short_state(info: DeviceInfo) -> str:
+    if not info.online:
+        return "offline"
+    if info.state is None:
+        return "unbekannt"
+    return f"{info.state} {info.unit}".strip() if info.unit else info.state
 
 
 def format_device(info: DeviceInfo) -> str:
@@ -57,8 +66,20 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 return f"Im Raum '{room}' gibt es keine Geräte."
             return "Es sind keine Geräte freigegeben (Allowlist leer)."
         shown = infos[:LIST_LIMIT]
-        lines = ["id | Name | Raum | Typ | Zustand | Risiko | Steuerung"]
-        lines += [format_device(i) for i in shown]
+        if len(infos) <= FULL_ROWS:
+            lines = ["id | Name | Raum | Typ | Zustand | Risiko | Steuerung"]
+            lines += [format_device(i) for i in shown]
+        else:
+            # Lange Listen kurz halten: jede Zeile kostet auf der CPU Prompt-Zeit. Namen genügen,
+            # get_state und set_state finden das Gerät damit selbst (id nur bei gleichen Namen).
+            names = [i.name.lower() for i in shown]
+            lines = [
+                f"{i.name} ({i.room}): {_short_state(i)}"
+                + ("" if i.controllable else " [nur lesbar]")
+                + ("" if i.risk == "low" else f" [Risiko {i.risk}]")
+                + (f" [id {i.id}]" if names.count(i.name.lower()) > 1 else "")
+                for i in shown
+            ]
         if len(infos) > len(shown):
             lines.append(
                 f"... und {len(infos) - len(shown)} weitere. Mit room oder query eingrenzen."
