@@ -20,6 +20,11 @@ from cat.ws.protocol import ChatMessage
 
 log = logging.getLogger("cat.agent")
 
+SPOKEN_HINT = (
+    "Diese Antwort wird laut vorgelesen: höchstens 1 bis 2 kurze Sätze, kein Markdown, keine "
+    "Aufzählungen, keine Sonderzeichen. Stelle bei Bedarf genau eine kurze Rückfrage."
+)
+
 
 class AgentResponder:
     """Verbindet Chatverlauf, Agent-Schleife und Werkzeuge mit dem Dialog."""
@@ -28,12 +33,14 @@ class AgentResponder:
         self._state = state
         self._agent = agent
 
-    async def reply(self, history: list[ChatMessage]) -> AsyncIterator[str]:
+    async def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]:
         messages = to_llm_messages([(m.role, m.text) for m in history])
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         # Relevante Erinnerungen vor der Antwort in den Prompt holen (FTS5, lokal, ohne LLM).
         extra = await asyncio.to_thread(self._state.memory.context_for, question)
+        if spoken:
+            extra = f"{extra}\n\n{SPOKEN_HINT}".strip()
         try:
             async for delta in self._agent.run(messages, ctx, system_extra=extra):
                 yield delta

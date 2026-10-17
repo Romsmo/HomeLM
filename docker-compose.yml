@@ -24,8 +24,9 @@ services:
       CAT_DISK_PATH: /data
     volumes:
       - ./data:/data
-    mem_limit: 768m
-    cpus: 1.0
+    # Mit Sprache (STT base) braucht Cat ca. 600 MB. Ein Fehler in Cat darf Nextcloud nicht verdrängen.
+    mem_limit: 1536m
+    cpus: 3.0
 
   # Code-Sandbox für das Tool run_python: KEIN Netzwerk, schreibgeschützt, ohne Capabilities,
   # mit Speicher-, CPU- und Prozesslimit. Cat und Sandbox tauschen nur Dateien in data/sandbox aus.

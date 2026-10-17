@@ -218,3 +218,20 @@
 
 **Rollback**
 - Phase 4 bis 9 zurücknehmen: ältere Image-Stände gibt es nicht als Tag; Rollback = Repo auf einen früheren Commit zurücksetzen (z. B. `06ae227` = Phase 0-3), neu kopieren und `docker compose build && docker compose up -d --no-build`. Cat stoppen: `cd /srv/homelm && docker compose down` (ohne `-v`), das beendet beide Container und berührt nichts anderes.
+
+## Phase 6: Sprachpipeline auf dem Server (Stand: lokal gebaut und getestet, Messung auf dem Server folgt unten)
+
+**Gebaut**
+- `backend/src/cat/voice/`: `vad.py` (Silero-VAD v6 als ONNX direkt mit onnxruntime, ohne torch; Segmentierung mit Hysterese, Vorlauf, Mindestlänge, einstellbarer Pause, Zeitlimit), `stt.py` (faster-whisper, int8, eigener Thread mit `nice`, Warmlauf, Filter gegen erfundene Standardsätze), `tts.py` (Piper, deutsche Stimme, satzweise), `sentences.py` (Satzteiler für den Strom des LLM), `pipeline.py` (`VoiceEngine`, `VoiceSession`: Halbduplex, STT -> Dialog -> TTS, Latenzmessung je Stufe), `setup.py` (Modelle laden, Hinweistext mit Raum- und Gerätenamen).
+- `ws/voice.py`: WebSocket `/ws/voice` und `GET /api/voice` (Protokoll: `docs/voice-protocol.md`). Der Dialog liefert jetzt ein `Reply` (Antworttext, Zeit bis zum ersten Wort) und streamt Textteile an die Sprachausgabe; Antworten für Sprache bekommen die Vorgabe "1 bis 2 Sätze, kein Markdown".
+- Frontend: Mikrofon-Knopf im Chat (AudioWorklet auf 16 kHz PCM16, Wiedergabe der Antwort, Latenzanzeige). Bei `http://<IP>` ist der Knopf gesperrt und erklärt es (Browser verlangen HTTPS oder localhost).
+- Testwerkzeug `scripts/voice_roundtrip.py` (WAV oder `--say` durch die ganze Pipeline, Antwort als WAV, Latenzen), Vorladen der Modelle mit `scripts/download_models.py`. Doku: `docs/voice.md`.
+
+**Abnahme (lokal, echte Modelle): bestanden**
+- Gesprochen "Wie warm ist es draußen" (von Piper erzeugt) -> Silero erkennt Beginn und Ende -> Whisper base erkennt den Satz -> der Fast-Path liest den **echten** Außentemperatur-Wert aus Ihrem openHAB (12,21 °C) -> Piper spricht die Antwort in 4,1 s. Latenz ab Ende der Äußerung: Erkennung 394 ms, erstes Wort 413 ms, **erstes Audio 525 ms** (plus die eingestellte Pause von 1,5 s bis zum Sprachende).
+- Tests: Backend 335 (davon 1 mit echten Modellen: Sprache -> VAD -> STT, und Stille ergibt keinen Text), Frontend 90.
+
+**Gefundene und behobene Fehler**
+- Der Satzteiler trennte "z. B." (Ausnahme saß an der falschen Stelle des Regex).
+- Whisper base hört "Küche" als "Kiche"; der Hinweistext mit Raumnamen ist dafür da (auf dem Server gegen `small` zu messen).
+- Windows-Eigenheit in Tests: Timer unter 15 ms feuern sofort, daher scheinbare Null-Zeiten; Tests nutzen jetzt 50 ms.

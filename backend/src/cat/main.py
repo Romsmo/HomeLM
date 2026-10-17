@@ -14,7 +14,9 @@ from cat.memory.sessions import summarize_old_sessions
 from cat.plugins.manager import PluginManager
 from cat.plugins.registry import PluginServices, build_plugins
 from cat.state import AppState
+from cat.voice.setup import build_engine, load_engine
 from cat.ws import endpoint
+from cat.ws import voice as voice_ws
 from cat.ws.protocol import WidgetUpdate
 
 log = logging.getLogger("cat")
@@ -43,11 +45,20 @@ def _start_summaries(state: AppState) -> "asyncio.Task[int] | None":
     return asyncio.create_task(run())
 
 
+def _start_voice(state: AppState) -> "asyncio.Task[None] | None":
+    """Lädt die Sprachmodelle im Hintergrund (Cat ist sofort erreichbar, Sprache folgt)."""
+    if not state.settings.voice or state.voice is None:
+        return None
+    return asyncio.create_task(load_engine(state.voice, state.settings))
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level.upper())
 
     state = AppState(settings)
+    if settings.voice:
+        state.voice = build_engine(settings, state.devices)
 
     async def publish(update: WidgetUpdate) -> None:
         state.widgets[update.id] = update
@@ -64,11 +75,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await plugins.start()
         summary_task = _start_summaries(state)
+        voice_task = _start_voice(state)
         try:
             yield
         finally:
             if summary_task:
                 summary_task.cancel()
+            if voice_task:
+                voice_task.cancel()
             await plugins.stop()
 
     app = FastAPI(title="Cat", version=__version__, lifespan=lifespan)
@@ -84,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(endpoint.router)
+    app.include_router(voice_ws.router)
 
     # Muss zuletzt eingehängt werden, damit API-Routen Vorrang haben.
     static_dir = settings.static_dir

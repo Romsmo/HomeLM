@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     summarize_sessions: bool = True
     # Code-Sandbox (Phase 9): Tool run_python, Container homelm-sandbox ohne Netzwerk.
     sandbox: bool = True
+    # Sprache (Phase 6): STT faster-whisper, TTS Piper, VAD Silero. Modelle in data/models.
+    voice: bool = False
+    stt_model: str = "base"  # base oder small, siehe docs/voice.md (Messung)
+    stt_compute: str = "int8"
+    stt_threads: int = 4
+    tts_voice: str = "de_DE-thorsten-medium"
+    vad_silence_s: float = 1.5  # Pause bis zum Ende der Äußerung
+    voice_nice: int = 10  # Rechenthreads mit niedriger Priorität, Nextcloud und Co. haben Vorrang
     # Fast-Path: Gerätebefehle ohne LLM (Phase 5). Abschaltbar zum Vergleichen.
     fastpath: bool = True
     # openHAB (Phase 4). Token optional (lokal ist die REST-API oft offen).
@@ -73,6 +81,10 @@ class Settings(BaseSettings):
     weather_lon: float | None = None
     weather_name: str = ""
     weather_ttl_s: float = 600.0
+
+    @property
+    def models_dir(self) -> Path:
+        return self.data_dir / "models"
 
     @property
     def sandbox_dir(self) -> Path:

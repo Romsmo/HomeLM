@@ -2,6 +2,7 @@ import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { chatToMarkdown, downloadText, exportFileName } from "../lib/exportChat";
+import type { MicControl } from "../hooks/useVoice";
 import type { ChatItem } from "../state/store";
 
 function Bubble({ message }: { message: ChatItem }) {
@@ -33,18 +34,58 @@ function Bubble({ message }: { message: ChatItem }) {
   );
 }
 
+const MIC_LABEL: Record<MicControl["state"], string> = {
+  off: "Mikrofon einschalten",
+  connecting: "Mikrofon wird verbunden",
+  ready: "Mikrofon ausschalten (wartet auf Sprache)",
+  listening: "Mikrofon ausschalten (hört zu)",
+  thinking: "Mikrofon ausschalten (Cat denkt nach)",
+  speaking: "Mikrofon ausschalten (Cat spricht)",
+};
+
+function MicButton({ mic }: { mic: MicControl }) {
+  const active = mic.state !== "off";
+  const disabled = mic.unavailable !== null && !active;
+  return (
+    <button
+      type="button"
+      onClick={mic.toggle}
+      disabled={disabled}
+      aria-pressed={active}
+      aria-label={MIC_LABEL[mic.state]}
+      title={disabled ? (mic.unavailable ?? undefined) : MIC_LABEL[mic.state]}
+      className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        mic.state === "listening"
+          ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+          : mic.state === "speaking"
+            ? "border-amber-400 bg-amber-500/20 text-amber-300"
+            : active
+              ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+              : "border-slate-700 text-slate-300 hover:border-slate-500"
+      }`}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+      </svg>
+    </button>
+  );
+}
+
 export default function ChatPanel({
   messages,
   connected,
   busy,
   onSend,
   onClear,
+  mic,
 }: {
   messages: ChatItem[];
   connected: boolean;
   busy: boolean;
   onSend: (text: string) => void;
   onClear: () => void;
+  mic?: MicControl;
 }) {
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -105,7 +146,21 @@ export default function ChatPanel({
         <div ref={endRef} />
       </div>
 
+      {mic && (mic.latency || mic.error || (mic.state !== "off" && mic.state !== "ready")) && (
+        <p className="border-t border-slate-800 px-4 py-1.5 text-xs text-slate-400" aria-live="polite">
+          {mic.error
+            ? mic.error
+            : mic.state === "listening"
+              ? "Ich höre zu …"
+              : mic.state === "thinking"
+                ? "Ich denke nach …"
+                : mic.state === "speaking"
+                  ? "Cat spricht …"
+                  : mic.latency}
+        </p>
+      )}
       <form onSubmit={submit} className="flex items-end gap-2 border-t border-slate-800 p-3">
+        {mic && <MicButton mic={mic} />}
         <textarea
           aria-label="Nachricht an Cat"
           rows={1}

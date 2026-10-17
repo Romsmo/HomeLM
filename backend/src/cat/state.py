@@ -14,6 +14,7 @@ from cat.memory.service import MemoryService
 from cat.plugins.pending import PendingPlugins
 from cat.sandbox.client import SandboxClient
 from cat.stage.store import StageStore
+from cat.voice.pipeline import VoiceEngine
 from cat.ws.hub import Hub
 from cat.ws.protocol import ChatMessage, ProviderState, ServerEvent, WidgetUpdate
 
@@ -21,7 +22,7 @@ from cat.ws.protocol import ChatMessage, ProviderState, ServerEvent, WidgetUpdat
 class Responder(Protocol):
     """Erzeugt die Assistentenantwort als Strom von Textteilen."""
 
-    def reply(self, history: list[ChatMessage]) -> AsyncIterator[str]: ...
+    def reply(self, history: list[ChatMessage], spoken: bool = False) -> AsyncIterator[str]: ...
 
 
 class AppState:
@@ -50,6 +51,7 @@ class AppState:
         self.memory = MemoryService(
             settings.memory_dir, settings.sessions_dir, settings.session_log
         )
+        self.voice: VoiceEngine | None = None
         self.sandbox = SandboxClient(settings.sandbox_dir)
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fastpath = FastPath(self.devices, load_vocabulary(settings.synonyms_file))

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import type { ChatItem } from "../state/store";
+import type { MicControl } from "../hooks/useVoice";
 import ChatPanel from "./ChatPanel";
 
 const msg = (over: Partial<ChatItem>): ChatItem => ({
@@ -56,5 +57,53 @@ describe("ChatPanel", () => {
     setup({ busy: true });
     fireEvent.change(screen.getByLabelText("Nachricht an Cat"), { target: { value: "x" } });
     expect(screen.getByRole("button", { name: "Senden" })).toBeDisabled();
+  });
+
+  describe("Mikrofon", () => {
+    const mic = (over: Partial<MicControl> = {}): MicControl => ({
+      state: "off",
+      unavailable: null,
+      latency: null,
+      error: null,
+      toggle: vi.fn(),
+      ...over,
+    });
+
+    it("schaltet das Mikrofon per Knopf", () => {
+      const control = mic();
+      setup({ mic: control });
+      fireEvent.click(screen.getByRole("button", { name: "Mikrofon einschalten" }));
+      expect(control.toggle).toHaveBeenCalled();
+    });
+
+    it("ist gesperrt und erklärt warum, wenn das Mikrofon nicht nutzbar ist", () => {
+      setup({ mic: mic({ unavailable: "Das Mikrofon braucht HTTPS oder localhost." }) });
+      const button = screen.getByRole("button", { name: "Mikrofon einschalten" });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", "Das Mikrofon braucht HTTPS oder localhost.");
+    });
+
+    it("bleibt bedienbar, solange es läuft, auch wenn der Status später kippt", () => {
+      setup({ mic: mic({ state: "listening", unavailable: "egal" }) });
+      const button = screen.getByRole("button", { name: /Mikrofon ausschalten/ });
+      expect(button).toBeEnabled();
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByText("Ich höre zu …")).toBeInTheDocument();
+    });
+
+    it("zeigt Latenz und Fehler an", () => {
+      setup({ mic: mic({ state: "ready", latency: "Antwort nach 0,5 s" }) });
+      expect(screen.getByText("Antwort nach 0,5 s")).toBeInTheDocument();
+    });
+
+    it("zeigt den Fehler vor allem anderen", () => {
+      setup({ mic: mic({ state: "off", error: "Mikrofon nicht verfügbar oder nicht erlaubt." }) });
+      expect(screen.getByText("Mikrofon nicht verfügbar oder nicht erlaubt.")).toBeInTheDocument();
+    });
+
+    it("zeigt ohne Sprachfunktion gar keinen Knopf", () => {
+      setup({});
+      expect(screen.queryByRole("button", { name: /Mikrofon/ })).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { useCat } from "../hooks/useCat";
+import { useVoice } from "../hooks/useVoice";
 import Header from "./Header";
 import ChatPanel from "./ChatPanel";
 import Stage from "./Stage";
@@ -17,6 +18,7 @@ export default function Dashboard({
   const { state, dispatch, send } = useCat(onUnreachable);
   const connected = state.connection === "open";
   const busy = state.messages.some((m) => m.streaming);
+  const mic = useVoice(connected);
 
   return (
     <div className="flex h-dvh flex-col">
@@ -70,6 +72,7 @@ export default function Dashboard({
             busy={busy}
             onSend={(text) => send({ type: "chat.message", text })}
             onClear={() => send({ type: "chat.clear" })}
+            mic={mic}
           />
         </div>
       </main>
