@@ -22,7 +22,8 @@ export type ItemId =
   | "caption"
   | "stage";
 
-export const ITEM_META: Record<ItemId, { label: string; hideable: boolean }> = {
+/** `fixed`: bleibt an seinem Platz (Cat in der Mitte), lässt sich nicht verschieben oder skalieren. */
+export const ITEM_META: Record<ItemId, { label: string; hideable: boolean; fixed?: boolean }> = {
   date: { label: "Datum", hideable: true },
   clock: { label: "Uhr", hideable: true },
   system: { label: "System", hideable: true },
@@ -30,8 +31,8 @@ export const ITEM_META: Record<ItemId, { label: string; hideable: boolean }> = {
   weather: { label: "Wetter", hideable: true },
   devices: { label: "Geräte", hideable: true },
   files: { label: "Dateien", hideable: true },
-  core: { label: "Cat", hideable: false },
-  caption: { label: "Sprache", hideable: false },
+  core: { label: "Cat", hideable: false, fixed: true },
+  caption: { label: "Sprache", hideable: false, fixed: true },
   stage: { label: "Stage", hideable: false },
 };
 
@@ -124,7 +125,7 @@ export function parseLayout(raw: string | null): LayoutState {
     const d = data as { rects?: Record<string, unknown>; order?: unknown; hidden?: unknown };
     for (const id of ITEM_IDS) {
       const saved = d.rects?.[id];
-      if (isRect(saved)) base.rects[id] = clampRect(saved);
+      if (!ITEM_META[id].fixed && isRect(saved)) base.rects[id] = clampRect(saved);
     }
     if (Array.isArray(d.order)) {
       const known = d.order.filter((id): id is ItemId => ITEM_IDS.includes(id as ItemId));

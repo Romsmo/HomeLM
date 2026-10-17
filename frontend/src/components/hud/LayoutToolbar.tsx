@@ -1,48 +1,36 @@
 import { ITEM_META, type ItemId } from "../../lib/layout";
 
-/** Schalter für den Anpassen-Modus, Zurücksetzen und das Wiederholen ausgeblendeter Elemente. */
+/** Ausgeblendete Elemente zurückholen und die Anordnung zurücksetzen (immer verfügbar, dezent). */
 export default function LayoutToolbar({
-  editing,
   hidden,
-  onToggle,
   onReset,
   onShow,
 }: {
-  editing: boolean;
   hidden: ItemId[];
-  onToggle: () => void;
   onReset: () => void;
   onShow: (id: ItemId) => void;
 }) {
   return (
-    <div className="absolute bottom-2 left-2 z-40 flex max-w-[60%] flex-wrap items-center gap-1.5 text-xs">
+    <div className="absolute bottom-1 left-1 z-[60] flex max-w-[60%] flex-wrap items-center gap-1.5 text-xs opacity-50 transition hover:opacity-100 focus-within:opacity-100">
+      {hidden.map((id) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onShow(id)}
+          aria-label={`${ITEM_META[id].label} wieder einblenden`}
+          className="hud-btn rounded-md bg-black/70 px-2 py-1"
+        >
+          + {ITEM_META[id].label}
+        </button>
+      ))}
       <button
         type="button"
-        onClick={onToggle}
-        aria-pressed={editing}
-        title="Elemente verschieben und skalieren"
-        className={`hud-btn rounded-md bg-black/60 px-2.5 py-1 ${editing ? "!border-cyan-300 text-cyan-50" : "opacity-70 hover:opacity-100"}`}
+        onClick={onReset}
+        title="Alle Elemente an ihren Standardplatz"
+        className="hud-btn rounded-md bg-black/70 px-2 py-1"
       >
-        {editing ? "Fertig" : "Layout anpassen"}
+        Layout zurücksetzen
       </button>
-      {editing && (
-        <>
-          <button type="button" onClick={onReset} className="hud-btn rounded-md bg-black/60 px-2.5 py-1">
-            Zurücksetzen
-          </button>
-          {hidden.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onShow(id)}
-              aria-label={`${ITEM_META[id].label} wieder einblenden`}
-              className="hud-btn rounded-md bg-black/60 px-2 py-1"
-            >
-              + {ITEM_META[id].label}
-            </button>
-          ))}
-        </>
-      )}
     </div>
   );
 }

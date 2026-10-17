@@ -101,7 +101,7 @@ export default function Stage({
   const item = items[index];
   if (!item) return null;
   return (
-    <section aria-label="Stage" className="hud-panel hud-solid hud-in flex h-full min-h-0 min-w-0 flex-col overflow-hidden !p-0">
+    <section aria-label="Stage" className="hud-panel hud-solid hud-in flex h-full min-h-0 min-w-0 flex-col overflow-hidden !p-0 !pt-3">
       <header className="flex items-center justify-between gap-3 border-b border-cyan-400/15 px-4 py-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="hud-title truncate !tracking-[0.12em]">{item.title}</h2>

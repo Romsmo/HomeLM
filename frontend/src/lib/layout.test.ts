@@ -1,6 +1,7 @@
 import {
   DEFAULT_RECTS,
   ITEM_IDS,
+  ITEM_META,
   MIN_H,
   MIN_W,
   type Rect,
@@ -96,6 +97,13 @@ describe("Speichern und Laden", () => {
     expect(state.order.slice(0, 2)).toEqual(["weather", "core"]);
     expect([...state.order].sort()).toEqual([...ITEM_IDS].sort());
     expect(state.hidden).toEqual(["uptime"]); // Cat selbst lässt sich nicht ausblenden
+  });
+
+  it("Cat und Sprache bleiben fest, auch wenn etwas anderes gespeichert ist", () => {
+    const state = parseLayout(JSON.stringify({ rects: { core: { x: 0, y: 0, w: 0.2, h: 0.2 } } }));
+    expect(state.rects.core).toEqual(DEFAULT_RECTS.core);
+    expect(DEFAULT_RECTS.core.x + DEFAULT_RECTS.core.w / 2).toBeCloseTo(0.5, 6); // mittig
+    expect(ITEM_META.core.fixed && ITEM_META.caption.fixed).toBe(true);
   });
 
   it("holt neue Elemente nach, die ein älterer Stand nicht kannte", () => {

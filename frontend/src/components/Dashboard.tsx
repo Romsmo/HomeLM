@@ -22,9 +22,10 @@ import UploadStatus from "./hud/UploadStatus";
 import { renderWidget } from "./widgets/renderWidget";
 
 /**
- * Arbeitsraum: Cat als leuchtender Kern in der Mitte, Widgets ringsum. Auf großen Bildschirmen
- * ist die Fläche frei: "Layout anpassen" erlaubt Verschieben, Skalieren und Ausblenden der
- * Elemente (wird im Browser gespeichert). Auf kleinen Bildschirmen stapelt alles.
+ * Arbeitsraum: Cat als leuchtender Kern fest in der Mitte, Widgets ringsum. Auf großen Bildschirmen
+ * ist die Fläche frei: jedes Widget lässt sich wie ein Fenster am Balken oben verschieben und an
+ * der Ecke unten rechts skalieren (wird im Browser gespeichert). Auf kleinen Bildschirmen stapelt
+ * alles.
  * Klick auf den Kern öffnet den Chat, das Mikrofon hört von selbst zu, Dateien lassen sich
  * überall ins Fenster ziehen.
  */
@@ -46,7 +47,6 @@ export default function Dashboard({
   const canvas = useRef<HTMLDivElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [stageHidden, setStageHidden] = useState(false);
-  const [editing, setEditing] = useState(false);
 
   // Neuer Stage-Inhalt (auch das Geräte-Panel oder eine abgelegte Datei) blendet die Stage ein
   // und legt sie nach vorn.
@@ -152,7 +152,6 @@ export default function Dashboard({
                   id={id}
                   rect={layout.state.rects[id]}
                   z={index + 1}
-                  editing={editing}
                   canvas={canvas}
                   onChange={layout.setRect}
                   onCommit={layout.commit}
@@ -164,9 +163,7 @@ export default function Dashboard({
               );
             })}
             <LayoutToolbar
-              editing={editing}
               hidden={layout.state.hidden.filter((id) => ITEM_IDS.includes(id))}
-              onToggle={() => setEditing((e) => !e)}
               onReset={layout.reset}
               onShow={layout.show}
             />

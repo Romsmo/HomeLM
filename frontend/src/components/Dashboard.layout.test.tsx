@@ -17,6 +17,7 @@ function setup() {
 }
 
 const item = (id: string) => document.querySelector(`[data-item="${id}"]`) as HTMLElement;
+const bar = (name: RegExp) => screen.getByRole("group", { name });
 const box = {
   x: 0,
   y: 0,
@@ -28,7 +29,7 @@ const box = {
   height: 500,
   toJSON: () => ({}),
 };
-const edit = () => fireEvent.click(screen.getByRole("button", { name: "Layout anpassen" }));
+const stored = () => JSON.parse(window.localStorage.getItem("cat.layout.v1") ?? "{}");
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -36,94 +37,96 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Arbeitsraum: Layout anpassen", () => {
-  it("zeigt Griffe nur im Anpassen-Modus", () => {
+describe("Arbeitsraum: Fenster-Bedienung ohne Bearbeiten-Knopf", () => {
+  it("hat keinen Anpassen-Schalter, die Griffe sind immer da", () => {
     setup();
-    expect(screen.queryByRole("group", { name: /Wetter/ })).not.toBeInTheDocument();
-    edit();
-    expect(screen.getByRole("group", { name: /Wetter/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Fertig" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
-    expect(screen.queryByRole("group", { name: /Wetter/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Layout anpassen|Fertig/ })).not.toBeInTheDocument();
+    for (const name of ["Wetter", "System", "Uptime", "Geräte", "Dateien", "Datum", "Uhr", "Stage"].slice(0, 7)) {
+      expect(bar(new RegExp(`^${name}:`))).toBeInTheDocument();
+    }
+    expect(item("weather").querySelector('[data-handle="se"]')).not.toBeNull();
   });
 
-  it("verschiebt per Pfeiltasten, skaliert mit Umschalt und speichert das", () => {
+  it("Cat sitzt fest in der Mitte: keine Griffe, nicht verschiebbar", () => {
     setup();
-    edit();
-    const before = item("weather").style.left;
-    const group = screen.getByRole("group", { name: /Wetter/ });
-    fireEvent.keyDown(group, { key: "ArrowLeft" });
-    expect(item("weather").style.left).not.toBe(before);
-    const width = item("weather").style.width;
-    fireEvent.keyDown(group, { key: "ArrowRight", shiftKey: true });
-    expect(item("weather").style.width).not.toBe(width);
-    const saved = JSON.parse(window.localStorage.getItem("cat.layout.v1") ?? "{}");
-    expect(saved.rects.weather.x).toBeCloseTo(0.78, 3);
+    expect(screen.queryByRole("group", { name: /^Cat:/ })).not.toBeInTheDocument();
+    expect(item("core").querySelector("[data-handle]")).toBeNull();
+    expect(item("core").style.left).toBe("26%");
+    expect(item("core").style.width).toBe("48%"); // 26 % + 48 % + 26 % = mittig
   });
 
-  it("lädt eine gespeicherte Anordnung", () => {
+  it("ein gespeicherter Platz für Cat wird ignoriert", () => {
     window.localStorage.setItem(
       "cat.layout.v1",
-      JSON.stringify({ rects: { weather: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } } }),
+      JSON.stringify({ rects: { core: { x: 0, y: 0, w: 0.2, h: 0.2 }, weather: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } } }),
     );
     setup();
+    expect(item("core").style.left).toBe("26%");
     expect(item("weather").style.left).toBe("10%");
     expect(item("weather").style.height).toBe("40%");
   });
 
-  it("zieht per Maus und holt das Element nach vorn", () => {
+  it("verschiebt per Pfeiltasten, skaliert mit Umschalt und speichert das", () => {
     setup();
-    edit();
+    const before = item("weather").style.left;
+    const width = item("weather").style.width;
+    fireEvent.keyDown(bar(/^Wetter:/), { key: "ArrowLeft" });
+    expect(item("weather").style.left).not.toBe(before);
+    fireEvent.keyDown(bar(/^Wetter:/), { key: "ArrowLeft", shiftKey: true });
+    expect(item("weather").style.width).not.toBe(width);
+    expect(stored().rects.weather.x).toBeCloseTo(0.78, 3);
+  });
+
+  it("verschiebt per Maus am Balken oben und holt das Element nach vorn", () => {
+    setup();
     vi.spyOn(screen.getByLabelText("Arbeitsraum"), "getBoundingClientRect").mockReturnValue(box);
     const zBefore = Number(item("uptime").style.zIndex);
-    fireEvent.pointerDown(screen.getByRole("group", { name: /Uptime/ }), { clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(bar(/^Uptime:/), { clientX: 100, clientY: 100 });
     fireEvent.pointerMove(window, { clientX: 200, clientY: 50 });
     fireEvent.pointerUp(window);
     expect(item("uptime").style.left).toBe("11%"); // 0,01 + 100/1000
     expect(item("uptime").style.top).toBe("62%"); // 0,72 - 50/500
     expect(Number(item("uptime").style.zIndex)).toBeGreaterThan(zBefore);
-    expect(JSON.parse(window.localStorage.getItem("cat.layout.v1") ?? "{}").rects.uptime.x).toBeCloseTo(0.11, 3);
+    expect(stored().rects.uptime.x).toBeCloseTo(0.11, 3);
   });
 
-  it("skaliert an der Ecke", () => {
+  it("skaliert wie ein Fenster an der Ecke unten rechts", () => {
     setup();
-    edit();
     vi.spyOn(screen.getByLabelText("Arbeitsraum"), "getBoundingClientRect").mockReturnValue(box);
-    const handle = item("system").querySelector('[data-handle="se"]') as HTMLElement;
-    fireEvent.pointerDown(handle, { clientX: 0, clientY: 0 });
+    const grip = item("system").querySelector('[data-handle="se"]') as HTMLElement;
+    fireEvent.pointerDown(grip, { clientX: 0, clientY: 0 });
     fireEvent.pointerMove(window, { clientX: 50, clientY: 50 });
     fireEvent.pointerUp(window);
+    expect(item("system").style.left).toBe("1%"); // die linke obere Ecke bleibt stehen
+    expect(item("system").style.top).toBe("32%");
     expect(item("system").style.width).toBe("25%"); // 0,20 + 0,05
     expect(item("system").style.height).toBe("48%"); // 0,38 + 0,10
   });
 
+  it("der Inhalt bleibt bedienbar (Schaltflächen im Widget funktionieren ohne Modus)", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Panel öffnen" }));
+    expect(dispatch).toHaveBeenCalledWith({ kind: "showDevices" });
+  });
+
   it("blendet Elemente aus und wieder ein, Zurücksetzen stellt alles her", () => {
     setup();
-    edit();
     fireEvent.click(screen.getByRole("button", { name: "Wetter ausblenden" }));
     expect(item("weather")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Wetter wieder einblenden" }));
     expect(item("weather")).not.toBeNull();
-    fireEvent.keyDown(screen.getByRole("group", { name: /Wetter/ }), { key: "ArrowDown" });
-    fireEvent.click(screen.getByRole("button", { name: "Zurücksetzen" }));
+    fireEvent.keyDown(bar(/^Wetter:/), { key: "ArrowDown" });
+    expect(item("weather").style.top).not.toBe("2%");
+    fireEvent.click(screen.getByRole("button", { name: "Layout zurücksetzen" }));
     expect(item("weather").style.top).toBe("2%");
   });
 
-  it("Cat selbst lässt sich nicht ausblenden", () => {
+  it("Cat und Sprache lassen sich nicht ausblenden", () => {
     setup();
-    edit();
-    expect(screen.queryByRole("button", { name: "Cat ausblenden" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Cat|Sprache) ausblenden$/ })).not.toBeInTheDocument();
   });
 
-  it("öffnet beim Greifen des Kerns im Anpassen-Modus nicht den Chat", () => {
-    setup();
-    edit();
-    fireEvent.pointerDown(screen.getByRole("group", { name: /Cat:/ }), { clientX: 0, clientY: 0 });
-    fireEvent.pointerUp(window);
-    expect(screen.queryByRole("dialog", { name: "Chat mit Cat" })).not.toBeInTheDocument();
-  });
-
-  it("zeigt auf kleinen Bildschirmen die gestapelte Ansicht ohne Anpassen", () => {
+  it("zeigt auf kleinen Bildschirmen die gestapelte Ansicht ohne Griffe", () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: () => {},
@@ -131,7 +134,7 @@ describe("Arbeitsraum: Layout anpassen", () => {
     }));
     setup();
     expect(screen.queryByLabelText("Arbeitsraum")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Layout anpassen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /^Wetter:/ })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Cat wartet" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Dateien" })).toBeInTheDocument();
   });
