@@ -286,6 +286,12 @@ class DeviceService:
         same = [spec for spec, names in folded if key in names]
         if same:
             return same
+        # Gleiche Wortanfänge in anderer Reihenfolge ("Rollos Roman" = "Romans Rollo").
+        wanted = _stems(key)
+        if len(wanted) >= 2:
+            ordered = [spec for spec, names in folded if any(_stems(n) == wanted for n in names)]
+            if ordered:
+                return ordered
         scored = sorted(
             ((max(fuzz.WRatio(key, n) for n in names), spec) for spec, names in folded),
             key=lambda x: -x[0],

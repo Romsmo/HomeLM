@@ -236,6 +236,12 @@ async def test_a_vague_device_word_does_not_block_a_plain_answer(tmp_path: Path)
     assert out == "Roman ist ein Buch."
 
 
+def test_same_words_in_another_order_find_the_device(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    spec = service.resolve("Rollos Roman")
+    assert spec is not None and spec.id == "rollo"
+
+
 def test_mentions_device_uses_words_from_the_house(tmp_path: Path) -> None:
     service, _ = make(tmp_path)
     assert service.mentions_device("Welche Lichter sind an?")
