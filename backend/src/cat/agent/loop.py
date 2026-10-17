@@ -18,7 +18,7 @@ DEVICE_TOOLS = frozenset({"set_state", "get_state", "list_devices"})
 HOLD_CHARS = 80
 CORRECTION = (
     "Hinweis des Systems: Du hast kein Werkzeug aufgerufen, deshalb ist nichts passiert und "
-    "deine Antwort stimmt nicht. Rufe jetzt das passende Werkzeug auf (set_state zum Schalten, "
+    "deine Antwort ist unbelegt. Rufe jetzt das passende Werkzeug auf (set_state zum Schalten, "
     "get_state oder list_devices zum Nachsehen) oder sag ehrlich, dass du es nicht kannst."
 )
 UNVERIFIED = (
@@ -90,7 +90,7 @@ class Agent:
                 if hold:
                     held.append(event.text)
                     joined = "".join(held)
-                    if claims_action(joined):
+                    if ctx.device_related or claims_action(joined):
                         continue  # erst am Ende des Schritts entscheiden (kommt noch ein Werkzeug?)
                     if len(joined) < HOLD_CHARS and not _sentence_end(joined):
                         continue
@@ -109,15 +109,17 @@ class Agent:
             model_s = time.perf_counter() - model_started
             if held:
                 joined = "".join(held)
-                if claims_action(joined) and not calls:
+                if (ctx.device_related or claims_action(joined)) and not calls:
                     # "Okay, das Licht ist aus" ohne Werkzeugaufruf: nichts davon zeigen.
                     if corrections == 0:
                         corrections += 1
                         messages.append({"role": "assistant", "content": joined})
                         messages.append({"role": "user", "content": CORRECTION})
                         continue
-                    yield ("\n\n" if wrote_text else "") + UNVERIFIED
-                    return
+                    if claims_action(joined):
+                        yield ("\n\n" if wrote_text else "") + UNVERIFIED
+                        return
+                    # nur Gerätebezug vermutet (z. B. ein Name wie "Roman"): Antwort gilt
                 if wrote_text and not started:
                     yield "\n\n"
                 started = True
@@ -147,7 +149,9 @@ class Agent:
                 time.perf_counter() - tools_started,
                 ", ".join(c.name for c in calls),
             )
-            if ok_count == len(calls) and len(fresh) == len(calls):
+            asks = "?" in _last_user_text(history)
+            decided = all(c.name == "set_state" or asks for c in calls)
+            if ok_count == len(calls) and len(fresh) == len(calls) and decided:
                 # Jedes Werkzeug lieferte seinen fertigen Antworttext: kein zweiter Modellaufruf.
                 yield ("\n\n" if wrote_text else "") + "\n".join(fresh)
                 return
@@ -184,6 +188,13 @@ class Agent:
         except Exception:
             log.exception("Werkzeug %s ist abgestürzt", call.name)
             return "Fehler: Das Werkzeug ist intern fehlgeschlagen.", False
+
+
+def _last_user_text(history: list[Message]) -> str:
+    for message in reversed(history):
+        if message["role"] == "user":
+            return str(message.get("content") or "")
+    return ""
 
 
 def _find(calls: list[ToolCall], name: str) -> ToolCall | None:

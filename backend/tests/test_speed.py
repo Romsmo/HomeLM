@@ -69,10 +69,13 @@ def agent_for(service: DeviceService, provider: FakeProvider) -> Agent:
     return Agent(provider, registry, lambda: "SYSTEM")
 
 
-async def run(agent: Agent, text: str = "x") -> tuple[str, ToolContext]:
+async def run(
+    agent: Agent, text: str = "x", device_related: bool = False
+) -> tuple[str, ToolContext]:
     async def emit(_: object) -> None: ...
 
     ctx = ToolContext(emit=emit, stage=StageStore())  # type: ignore[arg-type]
+    ctx.device_related = device_related
     out = "".join([d async for d in agent.run([{"role": "user", "content": text}], ctx)])
     return out, ctx
 
@@ -97,7 +100,7 @@ async def test_a_successful_command_is_answered_without_asking_the_model_again(
 async def test_a_state_question_is_answered_from_the_tool_result(tmp_path: Path) -> None:
     service, _ = make(tmp_path)
     provider = FakeProvider([ToolCall("c1", "get_state", {"device": "Deckenlicht Roman"})])
-    out, _ = await run(agent_for(service, provider))
+    out, _ = await run(agent_for(service, provider), "Ist das Deckenlicht an?")
     assert out == "Deckenlicht Roman ist aus." and len(provider.calls) == 1
 
 
@@ -105,7 +108,7 @@ async def test_unknown_state_names_the_similar_device_in_the_instant_answer(tmp_
     service, _ = make(tmp_path)
     service.seed_states("openhab", {"RO2": RawState("0")})  # das Zwillings-Item hat einen Wert
     provider = FakeProvider([ToolCall("c1", "get_state", {"device": "Romans Rollo"})])
-    out, _ = await run(agent_for(service, provider))
+    out, _ = await run(agent_for(service, provider), "Ist Romans Rollo offen?")
     assert out.startswith("Den Zustand von Romans Rollo kenne ich nicht.")
     assert "Ähnliches Gerät: Rollo Roman Control ist offen." in out
     assert len(provider.calls) == 1
@@ -143,6 +146,42 @@ async def test_lookups_that_need_judgement_still_use_the_model(tmp_path: Path) -
     )
     out, _ = await run(agent_for(service, provider))
     assert "zwei Rollos" in out and len(provider.calls) == 2
+
+
+async def test_a_command_misrouted_to_get_state_still_gets_executed(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider(
+        [ToolCall("c1", "get_state", {"device": "Deckenlicht Roman"})],
+        [ToolCall("c2", "set_state", {"device": "Deckenlicht Roman", "command": "on"})],
+    )
+    out, _ = await run(agent_for(service, provider), "Mach das Deckenlicht von Roman an")
+    assert out == "Okay, Deckenlicht Roman ist an." and backend.sent == [("roman", "on")]
+    assert len(provider.calls) == 2
+
+
+async def test_device_talk_without_a_tool_is_not_shown_unverified(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    provider = FakeProvider(
+        [TextDelta("Das Deckenlicht ist bestimmt aus.")],
+        [ToolCall("c1", "get_state", {"device": "Deckenlicht Roman"})],
+        [TextDelta("Das Deckenlicht ist aus.")],
+    )
+    out, _ = await run(agent_for(service, provider), "Wie steht das Deckenlicht", True)
+    assert "bestimmt" not in out and "ist aus" in out
+
+
+async def test_a_vague_device_word_does_not_block_a_plain_answer(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    provider = FakeProvider([TextDelta("Roman ist ein Buch.")], [TextDelta("Roman ist ein Buch.")])
+    out, _ = await run(agent_for(service, provider), "Was ist ein Roman", True)
+    assert out == "Roman ist ein Buch."
+
+
+def test_mentions_device_uses_words_from_the_house(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    assert service.mentions_device("Sind die Rollos offen?")
+    assert service.mentions_device("Mach das Deckenlicht an")
+    assert not service.mentions_device("Wie wird das Wetter morgen?")
 
 
 # --- Kleiner Prompt für das lokale Modell ---

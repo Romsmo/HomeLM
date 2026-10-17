@@ -53,6 +53,7 @@ class AgentResponder:
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         previous = self._state.devices.last_device
+        ctx.device_related = self._state.devices.mentions_device(question)
         context = [(m.role, m.text) for m in history[:-1]][-4:]
         # Relevante Erinnerungen vor der Antwort in den Prompt holen (FTS5, lokal, ohne LLM).
         extra = await asyncio.to_thread(self._state.memory.context_for, question)

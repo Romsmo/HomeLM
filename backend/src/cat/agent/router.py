@@ -133,6 +133,7 @@ class RoutedResponder:
             return
 
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
+        ctx.device_related = self._state.devices.mentions_device(question)
         memory = await asyncio.to_thread(self._state.memory.context_for, question)
         hint = self._state.devices.last_device_hint()
         extra = "\n\n".join(

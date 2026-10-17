@@ -67,6 +67,7 @@ class DeviceService:
         self._discovered: list[DeviceSpec] = []
         self._all: list[DeviceSpec] = []
         self._by_item: dict[tuple[str, str], list[DeviceSpec]] = {}
+        self._stems: set[str] = set()
         self.last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
         self._rebuild()
 
@@ -86,6 +87,12 @@ class DeviceService:
         for spec in merged:
             index.setdefault((spec.backend, spec.item), []).append(spec)
         self._by_item = index
+        stems: set[str] = set()
+        for spec in merged:
+            if spec.listed:
+                for text in (spec.name, spec.room, *spec.synonyms):
+                    stems.update(_stems(text))
+        self._stems = stems
 
     def set_discovered(self, specs: list[DeviceSpec]) -> None:
         """Vom Backend erkannte Geräte (docs/devices.md). Ersetzt die vorige Erkennung."""
@@ -111,6 +118,13 @@ class DeviceService:
     def explicit_items(self, backend: str) -> set[str]:
         """Items, die von Hand in devices.yaml stehen (die Erkennung lässt sie in Ruhe)."""
         return {s.item for s in self._allowlist.specs if s.backend == backend}
+
+    def mentions_device(self, text: str) -> bool:
+        """Kommt ein Wort aus Gerätenamen, Räumen oder Synonymen im Text vor (auf den ersten
+        Buchstaben genau)? Dann geht es vermutlich um Geräte: Das Modell muss dafür ein Werkzeug
+        benutzen, statt aus dem Kopf zu antworten. Die Wörter stammen aus dem Haus, nicht aus
+        einer festen Liste."""
+        return not self._stems.isdisjoint(_stems(text))
 
     def has_item(self, backend: str, item: str) -> bool:
         return (backend, item) in self._by_item
@@ -390,3 +404,8 @@ class DeviceService:
         shown = f"{info.state} {info.unit}".strip() if info.state is not None else "unbekannt"
         text = f"Befehl gesendet: {what}. Zustand jetzt: {shown}."
         return CommandResult(spec, command, text, info)
+
+
+def _stems(text: str) -> set[str]:
+    """Wortanfänge (5 Zeichen) der Wörter ab 4 Buchstaben ("Rollos" und "Rollo" gleich)."""
+    return {t[:5] for t in tokenize(text) if len(t) >= 4 and not t.isdigit()}

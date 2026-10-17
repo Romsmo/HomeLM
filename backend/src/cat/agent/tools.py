@@ -40,6 +40,8 @@ class ToolContext:
     # Fertige Antworttexte, die Werkzeuge liefern (z. B. nach set_state): Der Agent gibt sie
     # direkt aus und spart den zweiten Modellaufruf (auf der CPU 5 bis 15 Sekunden).
     final_replies: list[str] = field(default_factory=list)
+    # Der Nutzer redet (vermutlich) über Geräte: Antworten ohne Gerätewerkzeug sind unbelegt.
+    device_related: bool = False
     # Alle Werkzeugaufrufe dieses Zuges in der Reihenfolge der Ausführung.
     trace: list[ToolTrace] = field(default_factory=list)
 
