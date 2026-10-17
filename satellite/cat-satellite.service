@@ -1,0 +1,27 @@
+# systemd-Dienst für den Cat-Satelliten (Raspberry Pi).
+# Installation: siehe docs/satellite.md
+#   sudo cp cat-satellite.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now cat-satellite
+[Unit]
+Description=Cat-Satellit (Wake-Word, Mikrofon, Lautsprecher)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cat
+Group=audio
+WorkingDirectory=/opt/cat-satellite
+ExecStart=/opt/cat-satellite/.venv/bin/python -m cat_satellite --config /etc/cat-satellite/config.yaml
+Restart=always
+RestartSec=5
+# Das Token steht in der config.yaml (Rechte 600, Besitzer cat). Der Dienst braucht sonst nichts.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# openWakeWord legt heruntergeladene Modelle im Paketordner der virtuellen Umgebung ab.
+ReadWritePaths=/opt/cat-satellite
+
+[Install]
+WantedBy=multi-user.target

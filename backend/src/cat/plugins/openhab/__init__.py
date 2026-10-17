@@ -111,7 +111,8 @@ class OpenHabPlugin(BasePlugin):
             token = ctx.settings.openhab_token
             self._client = httpx.AsyncClient(
                 base_url=ctx.settings.openhab_url,
-                timeout=httpx.Timeout(10.0, read=40.0),
+                # Kurze Verbindungszeit: Ist openHAB nicht erreichbar, antwortet Cat sofort.
+                timeout=httpx.Timeout(5.0, connect=2.0, read=40.0),
                 auth=(token.get_secret_value(), "") if token else None,
             )
         self._task = asyncio.create_task(self._run())

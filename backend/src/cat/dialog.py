@@ -17,6 +17,7 @@ from cat.ws.protocol import (
 log = logging.getLogger("cat.dialog")
 
 OnDelta = Callable[[str], Awaitable[None]]
+LOCK_WAIT_S = 30.0
 
 
 class EchoResponder:
@@ -42,6 +43,7 @@ async def handle_user_text(
     spoken: bool = False,
     on_delta: OnDelta | None = None,
     manage_voice_state: bool = True,
+    wait: bool = False,
 ) -> Reply:
     """Nimmt eine Nutzernachricht an, streamt die Antwort und pflegt den Verlauf.
 
@@ -49,11 +51,17 @@ async def handle_user_text(
     `spoken=True`: Die Antwort wird vorgelesen (kurz, ohne Markdown). `on_delta` bekommt die
     Textteile der Antwort (für die satzweise Sprachausgabe). Gibt den Antworttext zurück.
     """
-    if state.run_lock.locked():
+    if state.run_lock.locked() and not wait:
         await state.emit(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
         return Reply("")
     started = time.perf_counter()
-    async with state.run_lock:
+    try:
+        # Sprache wartet, bis ein laufendes Gespräch (z. B. ein anderer Satellit) fertig ist.
+        await asyncio.wait_for(state.run_lock.acquire(), timeout=LOCK_WAIT_S if wait else None)
+    except TimeoutError:
+        await state.emit(ErrorEvent(message="Cat ist gerade beschäftigt, bitte noch einmal."))
+        return Reply("")
+    try:
         user = ChatMessage(id=uuid.uuid4().hex, role="user", text=text, ts=_now())
         state.chat.append(user)
         state.memory.sessions.append("user", text)
@@ -97,6 +105,8 @@ async def handle_user_text(
             if manage_voice_state:
                 await state.emit(VoiceState(state="idle"))
         return Reply(assistant.text, first_output)
+    finally:
+        state.run_lock.release()
 
 
 async def _try_fastpath(state: AppState, text: str, room: str | None) -> str | None:

@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     weather_ttl_s: float = 600.0
 
     @property
+    def satellites_file(self) -> Path:
+        return self.data_dir / "config" / "satellites.yaml"
+
+    @property
     def models_dir(self) -> Path:
         return self.data_dir / "models"
 

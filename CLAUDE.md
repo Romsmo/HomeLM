@@ -109,6 +109,7 @@ docs/            # cat-plan.md, phase-prompts.md, PROGRESS.md, server-inventory.
 - Backend starten: `cd backend && uv run uvicorn cat.main:app --reload` (lokal auf diesem PC: `python -m uv ...`, siehe `docs/PROGRESS.md`)
 - Tests: `cd backend && uv run pytest`; Lint: `uv run ruff check . && uv run ruff format --check .`
 - Frontend: `cd frontend && npm run dev` / `npm test` / `npm run build`
+- Satellit: `cd satellite && uv run pytest` (Pi-Software, `docs/satellite.md`); Token anlegen: `scripts/satellite_token.py`
 - Gesamtsystem: `docker compose up --build` (Port standardmäßig nur `127.0.0.1:8090`, siehe `.env.example`)
 
 ## 9. Sicherheitsregeln für Cat selbst (verbindlich)

@@ -13,6 +13,7 @@ from cat.intents.vocabulary import load_vocabulary
 from cat.memory.service import MemoryService
 from cat.plugins.pending import PendingPlugins
 from cat.sandbox.client import SandboxClient
+from cat.satellites import SatelliteRegistry
 from cat.stage.store import StageStore
 from cat.voice.pipeline import VoiceEngine
 from cat.ws.hub import Hub
@@ -52,6 +53,7 @@ class AppState:
             settings.memory_dir, settings.sessions_dir, settings.session_log
         )
         self.voice: VoiceEngine | None = None
+        self.satellites = SatelliteRegistry.load(settings.satellites_file)
         self.sandbox = SandboxClient(settings.sandbox_dir)
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fastpath = FastPath(self.devices, load_vocabulary(settings.synonyms_file))

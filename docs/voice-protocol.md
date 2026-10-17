@@ -1,13 +1,19 @@
 # Audio-Protokoll `/ws/voice`
 
-WebSocket für Mikrofon-Audio rein und Sprachausgabe raus. Genutzt vom Browser (Cookie-Anmeldung wie `/ws`) und von Satelliten (Phase 7, mit Token). Alle Audio-Daten sind **PCM, 16 Bit, mono, little endian**.
+WebSocket für Mikrofon-Audio rein und Sprachausgabe raus. Genutzt vom Browser und von Satelliten. Alle Audio-Daten sind **PCM, 16 Bit, mono, little endian**.
+
+## Anmeldung
+
+- **Browser:** Sitzungs-Cookie (wie `/ws`) und passender `Origin`.
+- **Satellit:** Header `Authorization: Bearer <Token>`. Das Token gehört zu genau einem Satelliten in `data/config/satellites.yaml` (dort steht nur der SHA-256-Hash). Der **Raum** kommt aus diesem Eintrag; ein `hello` des Satelliten kann ihn nicht ändern. Nach 10 falschen Tokens von derselben Quelle sperrt der Server sie 60 Sekunden. Ein Browser kann diesen Header bei WebSockets nicht setzen, fremde Webseiten kommen also nicht über diesen Weg hinein.
+- Ohne gültige Anmeldung (oder bei ausgeschalteter Sprachfunktion) wird der Handshake mit HTTP 403 abgelehnt. `GET /api/satellites` (angemeldet) zeigt registrierte Satelliten und ob sie verbunden sind.
 
 ## Client an Server
 
 | Art | Inhalt |
 |---|---|
 | Binär | Mikrofon-Audio, 16 000 Hz. Beliebige Blockgröße bis 64 KiB (üblich: 1024 Bytes = 512 Abtastwerte = 32 ms). Größere Blöcke werden mit `error` abgelehnt. |
-| Text (JSON) | `{"type": "hello", "room": "Küche"}`: optional, setzt den Raum des Sprechers (Standardraum für den Fast-Path, "Licht an" meint dann die Küche). |
+| Text (JSON) | `{"type": "hello", "room": "Küche"}`: optional, nur Browser: setzt den Raum des Sprechers (Standardraum für den Fast-Path, "Licht an" meint dann die Küche). Bei Satelliten wird `hello` (z. B. mit `device_id`) angenommen, der Raum aber aus der Registrierung genommen. |
 
 ## Server an Client
 

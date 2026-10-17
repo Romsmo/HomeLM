@@ -235,3 +235,21 @@
 - Der Satzteiler trennte "z. B." (Ausnahme saß an der falschen Stelle des Regex).
 - Whisper base hört "Küche" als "Kiche"; der Hinweistext mit Raumnamen ist dafür da (auf dem Server gegen `small` zu messen).
 - Windows-Eigenheit in Tests: Timer unter 15 ms feuern sofort, daher scheinbare Null-Zeiten; Tests nutzen jetzt 50 ms.
+
+## Phase 7: Satellit
+
+**Gebaut**
+- **Server:** `satellites.py` (Register in `data/config/satellites.yaml`: je Satellit ID, Raum, **SHA-256-Hash** des Tokens, nie Klartext; kaputte Datei = niemand kommt herein; Sperre nach 10 Fehlversuchen), Anmeldung am `/ws/voice` per `Authorization: Bearer` (Browser weiter per Cookie), **Raum aus der Registrierung** (der Satellit kann ihn nicht selbst festlegen), `GET /api/satellites`, mehrere Satelliten gleichzeitig (Anfragen werden nacheinander bedient, Sprache wartet bis zu 30 s auf ein laufendes Gespräch). `scripts/satellite_token.py` legt Satelliten an und zeigt das Token genau einmal.
+- **Satellit** (`satellite/`, eigenes Paket, Python 3.11, systemd-Dienst): `config.py` (Validierung, `ws://` nur im lokalen Netz), `audio.py` (Mikrofon/Lautsprecher über sounddevice, Signalton), `wakeword.py` (openWakeWord mit ONNX; mitgelieferte Modelle zum Testen, eigenes Modell möglich), `client.py` (Zustandsmaschine WAKE -> BEEP -> STREAM -> THINK -> PLAY; vor dem Wake-Word verlässt kein Audio das Gerät; "Continue conversation" nach Rückfragen; Sperrzeit gegen Selbstauslösung; Watchdog; Wiederverbindung mit wachsender Wartezeit 2 bis 30 s), `__main__.py` (`--list-devices`, `--test-speaker`, `--test-mic`).
+- Anleitungen: `docs/satellite.md` (Pi einrichten, Schritt für Schritt), `docs/wakeword.md` (eigenes "Hey Cat" trainieren nach der openWakeWord-Dokumentation), Protokoll `docs/voice-protocol.md`.
+
+**Abnahme**
+- **Bestanden (Tests, echter Server + echter Satelliten-Code mit simuliertem Audio):** Anmeldung per Token, Wake-Word -> Streaming -> gesprochene Antwort -> zurück in den Wartezustand; der Raum des Tokens bestimmt "Licht an" (ein Satellit, der sich als "Flur" ausgibt, schaltet trotzdem die Küche); zwei Satelliten gleichzeitig, jeder bekommt seine Antwort; falsches Token abgewiesen, Sperre nach Fehlversuchen; Token-Skript und Server-Register passen zusammen.
+- Tests: Backend 351, Satellit 28.
+- **Nicht abgenommen:** "Hey Cat, schalte das Licht an" im Raum. Es fehlt echte Hardware (Pi, Mikrofon, Lautsprecher) und ein trainiertes "Hey Cat"-Modell. Ungeprüft sind echtes Audio über `sounddevice`, openWakeWord auf einem echten Pi, die systemd-Einheit und die Hörqualität im Raum.
+
+**Gefundene und behobene Fehler**
+- Die Sperrzeit gegen Selbstauslösung wurde schon beim Verbinden gesetzt (hätte mit unbewegter Uhr jede Auslösung geschluckt); gilt jetzt nur nach einem beendeten Gespräch.
+
+**Offene Punkte**
+- Raspberry Pi, USB-Konferenzlautsprecher, `docs/satellite.md` durchgehen; "Hey Cat" trainieren (`docs/wakeword.md`).

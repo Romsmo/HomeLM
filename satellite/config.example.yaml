@@ -1,0 +1,26 @@
+# Konfiguration des Cat-Satelliten. Kopieren nach /etc/cat-satellite/config.yaml und anpassen.
+# Das Token nie ins Repo legen. Alternativ als Umgebungsvariable CAT_SATELLITE_TOKEN setzen.
+
+# Adresse des Cat-Servers. Im LAN genügt ws:// (unverschlüsselt, nur lokales Netz erlaubt).
+server_url: ws://192.168.0.10:8090/ws/voice
+
+# Token dieses Satelliten (auf dem Server mit scripts/satellite_token.py erzeugt).
+token: HIER-DAS-TOKEN-EINTRAGEN
+
+# Name dieses Geräts (a-z, 0-9, - und _) und Raum. Maßgeblich ist der Raum, den der Server zum
+# Token gespeichert hat: "Licht an" meint den Raum des Satelliten.
+device_id: kueche-pi
+room: Küche
+
+# Wake-Word: Name eines mitgelieferten Modells (alexa, hey_jarvis, hey_mycroft, hey_rhasspy) zum
+# Testen, später der Pfad zu einem eigenen "Hey Cat"-Modell (siehe docs/wakeword.md).
+wakeword_model: hey_jarvis
+wakeword_threshold: 0.5   # höher = weniger Fehlauslösungen, aber auch mehr Überhörtes
+
+# Audio-Geräte (Name oder Nummer, `python -m cat_satellite --list-devices` zeigt sie). Leer = Standard.
+input_device:
+output_device:
+
+beep: true          # kurzer Signalton, wenn das Wake-Word erkannt wurde
+cooldown_s: 1.5     # Sperrzeit nach einer Antwort (verhindert Selbstauslösung durch Nachhall)
+server_timeout_s: 20
