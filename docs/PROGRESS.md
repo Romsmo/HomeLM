@@ -196,3 +196,25 @@
 
 **Gefundene und behobene Fehler**
 - `ThinkFilter` gab einen zurückgehaltenen Tag-Anfang am Ende nie frei (Antwort "x <th" verlor Text): `flush()` ergänzt.
+
+## Deployment Phase 4-9 auf dem Server (2026-10-17)
+
+**Gemacht**
+- Repo-Stand nach `/srv/homelm`, Images auf dem Server gebaut (`nice -n 19 ionice -c3`): `homelm-backend` (646 MB) und `homelm-sandbox` (416 MB). Stack `homelm` besteht jetzt aus `homelm-backend` und `homelm-sandbox`; Ollama bleibt hinter dem Profil `offline` und läuft **nicht**.
+- Cat hat ein festes Subnetz (`172.28.250.0/24`); die Container-Liste der übrigen Dienste ist vor und nach jedem Deployment unverändert geblieben. Cat im Leerlauf ca. 52 MiB, Sandbox ca. 7 MiB; Server-Last 0,2 bis 0,5, frei ca. 5 GB.
+- Auf dem Server liegt eine vorläufige Allowlist `data/config/devices.yaml` (6 harmlose Items, Kopie von `docs/devices.example.yaml`), Modus `CAT_DEVICE_CONTROL=readonly`.
+
+**Sandbox auf dem Server geprüft (über den Cat-Client): bestanden**
+- Rechnen, Fehlerausgabe und ein matplotlib-Diagramm (1 Bild, ca. 1 s) funktionieren.
+- Kein Netzwerk (`socket` scheitert mit OSError), kein DNS (gaierror), Dateisystem schreibgeschützt, Umgebung ohne Secrets, 900-MB-Allokation endet mit MemoryError, Endlosschleife wird nach dem Zeitlimit beendet (SIGKILL), Fork-Bombe stoppt beim Prozesslimit (61 Kinder), danach nur 5 Prozesse im Container.
+- Gefundener Fehler: Verwaiste Kindprozesse blieben als Zombies stehen (der Worker war PID 1 ohne Reaper) und füllten das Prozesslimit dauerhaft; `docker exec` und neue Aufträge scheiterten. Behoben mit `init: true` und `killpg` nach jedem Auftrag, erneut geprüft.
+- Im Container sind `/srv` und `/mnt` leere Basisordner, keine Hausdaten.
+
+**Noch offen (braucht den Nutzer)**
+1. **ufw-Regel** für den Weg Cat -> openHAB (sonst bleiben alle Geräte "offline"): `sudo ufw allow from 172.28.250.0/24 to any port 8080 proto tcp comment 'HomeLM zu openHAB'`. Cat zeigt bis dahin im Log "openHAB ist nicht erreichbar".
+2. In `/srv/homelm/.env` eintragen (Variablennamen, nie im Chat): `CAT_PASSWORD`, `ANTHROPIC_API_KEY`; Wetter: `CAT_WEATHER_LAT`, `CAT_WEATHER_LON`, `CAT_WEATHER_NAME`. Danach `cd /srv/homelm && docker compose up -d --no-build`.
+3. Entscheidungen: welche Geräte Cat sehen darf (Allowlist), Test-Lampe für die Abnahme "per Chat schalten", Modus `test`/`full`.
+4. RAM-Upgrade (16 GB) für den Offline-Fallback.
+
+**Rollback**
+- Phase 4 bis 9 zurücknehmen: ältere Image-Stände gibt es nicht als Tag; Rollback = Repo auf einen früheren Commit zurücksetzen (z. B. `06ae227` = Phase 0-3), neu kopieren und `docker compose build && docker compose up -d --no-build`. Cat stoppen: `cd /srv/homelm && docker compose down` (ohne `-v`), das beendet beide Container und berührt nichts anderes.
