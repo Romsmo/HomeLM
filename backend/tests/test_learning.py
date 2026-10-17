@@ -141,6 +141,47 @@ async def test_a_phrase_without_a_device_name_is_learned_as_an_alias(h: Harness)
     assert await h.learner.handle("wie kalt ist es draußen") is None  # andere Worte: Modell
 
 
+async def test_a_pronoun_after_the_device_was_named_is_not_learned(h: Harness) -> None:
+    named = [
+        ("user", "Schalte Deckenlicht Roman an"),
+        ("assistant", "Okay, Deckenlicht Roman ist an."),
+    ]
+    for _ in range(3):
+        h.run("mach es wieder aus", set_("roman", "off"), context=named)
+    assert h.learner.listing() == []
+
+
+async def test_a_bare_yes_after_an_offer_is_not_learned(h: Harness) -> None:
+    offer = [("user", "mach das licht aus"), ("assistant", "Meinst du Deckenlicht Roman?")]
+    for _ in range(3):
+        h.run("ja", set_("roman", "off"), context=offer)
+    assert h.learner.listing() == []
+
+
+async def test_repeating_the_same_question_is_not_mistaken_for_context(h: Harness) -> None:
+    earlier = [("user", "Wie warm ist es draußen?"), ("assistant", "Außentemperatur: 12,5 °C.")]
+    for _ in range(2):
+        h.run("Wie warm ist es draußen?", get("temp"), context=earlier)
+    assert [r["active"] for r in h.learner.listing()] == [True]
+
+
+async def test_a_lookup_that_finds_exactly_one_device_counts_as_a_question(h: Harness) -> None:
+    row = "id | Name | Raum | Typ | Zustand | Risiko | Steuerung\nroman | Deckenlicht Roman | Romans Zimmer | Licht | OFF | Risiko low | steuerbar"
+    for _ in range(2):
+        h.learner.observe(
+            "Ist das Deckenlicht Roman an?",
+            [ToolTrace("list_devices", {"query": "Deckenlicht Roman"}, True, row)],
+        )
+    result = await h.learner.handle("ist das deckenlicht roman an")
+    assert result is not None and result.text == "Deckenlicht Roman ist aus."
+    two = (
+        row + "\nmarius | Deckenlicht Marius | Marius Zimmer | Licht | OFF | Risiko low | steuerbar"
+    )
+    for _ in range(3):
+        h.learner.observe("welche lichter gibt es", [ToolTrace("list_devices", {}, True, two)])
+    assert all(r["phrase"] != "welche lichter gibt es" for r in h.learner.listing())
+
+
 async def test_a_room_makes_a_vague_sentence_learnable_for_that_room(h: Harness) -> None:
     for _ in range(2):
         h.run("Mach das Licht an", set_("kueche", "on"), room="Küche", previous_device=None)

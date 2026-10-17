@@ -190,12 +190,20 @@ class Learner:
         trace: list[ToolTrace],
         room: str | None = None,
         previous_device: str | None = None,
+        context: list[tuple[str, str]] | None = None,
     ) -> Shortcut | None:
         """Nach einer Anfrage, die das Modell gelöst hat. Gibt den Kurzbefehl zurück, wenn er
         dadurch NEU aktiv wurde (dann sagt Cat dem Nutzer, was es sich gemerkt hat)."""
         if not self.enabled or not phrase_of(text):
             return None
         used = [t for t in trace if t.tool not in IGNORED_TOOLS]
+        if not used:
+            # Nur nachgeschlagen: Findet list_devices genau ein Gerät, war das die Antwort auf eine
+            # Frage nach diesem Gerät ("ist das licht an").
+            looked = [t for t in trace if t.tool == "list_devices" and t.ok]
+            single = [_single_device(t.result) for t in looked]
+            if len(looked) == 1 and single[0] is not None:
+                used = [ToolTrace("get_state", {"device": single[0]}, True, "")]
         if not used or len(used) > MAX_ACTIONS:
             return None
         if any(t.tool not in LEARNABLE_TOOLS or not t.ok for t in used):
@@ -204,7 +212,7 @@ class Learner:
         if built is None:
             return None
         specs, actions = built
-        key, actions = self._generalize(text, specs, actions, room, previous_device)
+        key, actions = self._generalize(text, specs, actions, room, previous_device, context)
         if key is None:
             return None
 
@@ -253,6 +261,7 @@ class Learner:
         actions: list[Action],
         room: str | None = None,
         previous_device: str | None = None,
+        context: list[tuple[str, str]] | None = None,
     ) -> tuple[str | None, list[Action]]:
         phrase = phrase_of(text)
         if len(actions) > 1:
@@ -271,9 +280,11 @@ class Learner:
                 )
                 slotted = True
                 break
-        if not slotted and spec.id == previous_device:
-            # Gerade eben war genau dieses Gerät dran: "mach es aus" hängt vom Gespräch ab, nicht
-            # von der Formulierung. Das wird nicht gelernt.
+        if not slotted and (
+            spec.id == previous_device or _named_in_context(spec, phrase, context or [])
+        ):
+            # Das Gerät war gerade im Gespräch (vom Nutzer genannt, vom Modell angeboten oder eben
+            # bedient): "mach es aus", "ja" hängen vom Gespräch ab, nicht von der Formulierung.
             return None, actions
         # Ohne Gerätenamen im Satz ("wie warm ist es draußen", "mach das licht an" im Raum) gilt
         # die Formulierung wörtlich für dieses Gerät, bei bekanntem Raum nur in diesem Raum.
@@ -371,6 +382,31 @@ class Learner:
         with contextlib.suppress(KeyError):
             del self._entries[entry.key]
             self._save()
+
+
+def _named_in_context(spec: DeviceSpec, phrase: str, context: list[tuple[str, str]]) -> bool:
+    """Steht der Gerätename in den letzten Nachrichten? Nachrichten, die zur selben Formulierung
+    gehören (frühere gleiche Frage samt Antwort), zählen nicht: sonst ließe sich nie etwas
+    Wiederholtes lernen."""
+    names = {phrase_of(n) for n in (spec.name, *spec.synonyms) if phrase_of(n)}
+    for i, (role, text) in enumerate(context):
+        if role == "user" and phrase_of(text) == phrase:
+            continue
+        if role == "assistant" and i > 0 and context[i - 1][0] == "user":
+            if phrase_of(context[i - 1][1]) == phrase:
+                continue
+        folded = phrase_of(text)
+        if any(re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", folded) for n in names):
+            return True
+    return False
+
+
+def _single_device(result: str) -> str | None:
+    """id des einzigen Geräts in einem list_devices-Ergebnis, sonst None."""
+    rows = [line for line in result.splitlines()[1:] if line.count(" | ") >= 5]
+    if len(rows) != 1:
+        return None
+    return rows[0].split(" | ", 1)[0].strip() or None
 
 
 def _scoped(room: str | None, phrase: str) -> str:

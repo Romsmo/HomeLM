@@ -46,6 +46,7 @@ class AgentResponder:
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         previous = self._state.devices.last_device
+        context = [(m.role, m.text) for m in history[:-1]][-4:]
         # Relevante Erinnerungen vor der Antwort in den Prompt holen (FTS5, lokal, ohne LLM).
         extra = await asyncio.to_thread(self._state.memory.context_for, question)
         if room:
@@ -55,7 +56,7 @@ class AgentResponder:
         try:
             async for delta in self._agent.run(messages, ctx, system_extra=extra):
                 yield delta
-            await self._state.learn_from(question, ctx.trace, room, previous)
+            await self._state.learn_from(question, ctx.trace, room, previous, context)
         except LLMError as exc:
             # Verständliche Meldung statt Stacktrace; sie erscheint als Assistentennachricht.
             yield f"Das hat leider nicht geklappt: {exc}"

@@ -122,6 +122,7 @@ class RoutedResponder:
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         self._last_use = time.monotonic()
         previous = self._state.devices.last_device
+        context = [(m.role, m.text) for m in history[:-1]][-4:]
         if self._claude and is_explicit_request(question):
             async for part in self._escalate(history, Escalation("explicit"), spoken):
                 yield part
@@ -188,7 +189,7 @@ class RoutedResponder:
             ctx.escalation = ctx.escalation or Escalation("refused")
         escalation = ctx.escalation or (None if shown else Escalation("empty"))
         if escalation is None:
-            await self._state.learn_from(question, ctx.trace, room, previous)
+            await self._state.learn_from(question, ctx.trace, room, previous, context)
             return
         if shown:
             yield "\n\n"

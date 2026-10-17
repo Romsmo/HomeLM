@@ -84,10 +84,11 @@ class AppState:
         trace: list[ToolTrace],
         room: str | None = None,
         previous_device: str | None = None,
+        context: list[tuple[str, str]] | None = None,
     ) -> None:
         """Nach einer vom Modell gelösten Anfrage: daraus lernen und es dem Nutzer sagen."""
         try:
-            learned = self.learner.observe(question, trace, room, previous_device)
+            learned = self.learner.observe(question, trace, room, previous_device, context)
         except Exception:
             log.exception("Lernen fehlgeschlagen")
             return
