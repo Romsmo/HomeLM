@@ -17,12 +17,19 @@ services:
     user: "${CAT_UID:-10001}:${CAT_GID:-10001}"
     environment:
       HOME: /tmp
+      # openHAB läuft im Host-Netzwerk. Das Gateway des festen Cat-Subnetzes ist der Host.
+      # Auf dem Server muss ufw diesen Weg erlauben (docs/devices.md).
+      CAT_OPENHAB_URL: ${CAT_OPENHAB_URL:-http://172.28.250.1:8080}
       # Datenträger-Widget: Partition des Datenordners (nicht das Overlay-Dateisystem des Containers).
       CAT_DISK_PATH: /data
-    # openHAB läuft im Host-Netzwerk: aus dem Container über host.docker.internal erreichbar.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
     mem_limit: 768m
     cpus: 1.0
+
+networks:
+  default:
+    # Festes Subnetz, damit die Firewall-Regel für den Weg zu openHAB stabil bleibt.
+    ipam:
+      config:
+        - subnet: 172.28.250.0/24

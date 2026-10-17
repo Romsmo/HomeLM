@@ -62,7 +62,14 @@ tail -n 20 /srv/homelm/data/audit.jsonl
 
 ## openHAB
 
-- Adresse `CAT_OPENHAB_URL` (Standard `http://host.docker.internal:8080`, im Container über `extra_hosts` erreichbar, openHAB läuft im Host-Netzwerk). Cat ändert an openHAB nichts, es liest Items und sendet nur Befehle für Allowlist-Geräte.
+- Adresse `CAT_OPENHAB_URL` (Standard `http://172.28.250.1:8080`). openHAB läuft im Host-Netzwerk, aus dem Container ist der Host das Gateway des festen Cat-Subnetzes `172.28.250.0/24`. Cat ändert an openHAB nichts, es liest Items und sendet nur Befehle für Allowlist-Geräte.
+- **Firewall:** `ufw` ist auf dem Server aktiv und blockiert diesen Weg standardmäßig. Einmalig erlauben (nur dieses Subnetz, nur dieser Port):
+
+  ```bash
+  sudo ufw allow from 172.28.250.0/24 to any port 8080 proto tcp comment 'HomeLM zu openHAB'
+  ```
+
+  Rückgängig: `sudo ufw status numbered`, dann `sudo ufw delete <Nummer>`.
 - Token `CAT_OPENHAB_TOKEN` ist optional. Die lokale REST-API dieses Servers antwortet ohne Anmeldung. Falls Sie später einen API-Token (Profil, API-Tokens) einführen, hier eintragen.
 - Änderungen kommen live per Server-Sent-Events (`/rest/events`). Bricht die Verbindung ab, markiert Cat die Geräte als offline und verbindet sich mit Wartezeit neu.
 
