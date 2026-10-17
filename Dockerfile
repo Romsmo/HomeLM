@@ -49,7 +49,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 RUN mkdir /data && chown cat /data
 USER cat
-EXPOSE 8000
+EXPOSE 8000 8443
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"
-CMD ["uvicorn", "cat.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "cat.serve"]

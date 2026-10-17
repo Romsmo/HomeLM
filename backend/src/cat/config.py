@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # Gebautes Frontend (im Container /app/static). Fehlt es, wird nur die API bedient.
     static_dir: Path | None = None
 
+    # HTTPS (Mikrofon im Browser braucht einen sicheren Kontext, docs/https.md). Beide Dateien
+    # setzen, dann lauscht Cat zusätzlich auf `tls_port`. Leer = nur HTTP.
+    tls_cert: Path | None = None
+    tls_key: Path | None = None
+    tls_port: int = 8443
+
     # Login der Weboberfläche. Ohne Passwort ist kein Login möglich (fail closed).
     password: SecretStr | None = None
     # Schlüssel für Sitzungs-Cookies. Leer: zufällig pro Start (Sitzungen enden beim Neustart).

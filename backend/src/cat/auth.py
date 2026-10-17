@@ -139,6 +139,8 @@ async def login(body: LoginBody, request: Request, response: Response) -> dict[s
         auth.signer.issue(),
         max_age=int(auth.signer.ttl_s),
         httponly=True,
+        # Über HTTPS nur verschlüsselt senden (über HTTP im LAN geht es nicht anders).
+        secure=request.url.scheme == "https",
         samesite="strict",
         path="/",
     )

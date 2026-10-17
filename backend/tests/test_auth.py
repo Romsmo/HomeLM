@@ -67,3 +67,12 @@ def test_limiter_unlocks_after_window() -> None:
     assert limiter.retry_after("ip") > 0
     now[0] = 31
     assert limiter.retry_after("ip") == 0
+
+
+def test_login_cookie_is_secure_only_over_https(settings: Settings) -> None:
+    for base, secure in (("http://testserver", False), ("https://testserver", True)):
+        with TestClient(create_app(settings), base_url=base) as c:
+            response = c.post("/api/login", json={"password": PASSWORD})
+            assert response.status_code == 200
+            header = response.headers["set-cookie"].lower()
+            assert ("secure" in header.split("; ")) is secure, header

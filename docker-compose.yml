@@ -13,6 +13,8 @@ services:
     ports:
       # Standard: nur lokal. Auf dem Server CAT_BIND_ADDR=192.168.0.10 setzen, nie 0.0.0.0.
       - "${CAT_BIND_ADDR:-127.0.0.1}:${CAT_HOST_PORT:-8090}:8000"
+      # HTTPS (nur aktiv, wenn data/certs/server.crt und server.key da sind, docs/https.md)
+      - "${CAT_BIND_ADDR:-127.0.0.1}:${CAT_TLS_HOST_PORT:-8443}:8443"
     # Auf dem Server CAT_UID/CAT_GID auf den Besitzer von ./data setzen (Bind-Mount).
     user: "${CAT_UID:-10001}:${CAT_GID:-10001}"
     environment:
@@ -22,6 +24,8 @@ services:
       CAT_OPENHAB_URL: ${CAT_OPENHAB_URL:-http://172.28.250.1:8080}
       # Datenträger-Widget: Partition des Datenordners (nicht das Overlay-Dateisystem des Containers).
       CAT_DISK_PATH: /data
+      CAT_TLS_CERT: /data/certs/server.crt
+      CAT_TLS_KEY: /data/certs/server.key
     volumes:
       - ./data:/data
     # Mit Sprache (STT base) braucht Cat ca. 600 MB. Ein Fehler in Cat darf Nextcloud nicht verdrängen.
