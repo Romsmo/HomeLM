@@ -25,11 +25,36 @@ _TYPE_DE = {
 }
 
 
+_STATE_WORDS = {
+    "an": "an", "ein": "an", "on": "an", "eingeschaltet": "an",
+    "aus": "aus", "off": "aus", "ausgeschaltet": "aus",
+    "offen": "offen", "auf": "offen", "open": "offen", "oben": "offen",
+    "zu": "zu", "geschlossen": "zu", "closed": "zu", "unten": "zu",
+}  # fmt: skip
+_STATE_TITLE = {"an": "An", "aus": "Aus", "offen": "Offen", "zu": "Zu"}
+
+
+def _has_state(info: DeviceInfo, wanted: str) -> bool:
+    """Passt der Zustand zu "an", "aus", "offen" oder "zu"? (Rollladen: 0 = offen, 100 = zu.)"""
+    if not info.online or info.state is None:
+        return False
+    raw = info.state.upper()
+    number = float(raw) if raw.replace(".", "", 1).isdigit() else None
+    if info.type == "shutter" and number is not None:
+        return number <= 0 if wanted == "offen" else number >= 100 and wanted == "zu"
+    if info.type == "dimmer" and number is not None:
+        return number > 0 if wanted == "an" else number <= 0 and wanted == "aus"
+    return raw == {"an": "ON", "aus": "OFF", "offen": "OPEN", "zu": "CLOSED"}[wanted]
+
+
 def _short_state(info: DeviceInfo) -> str:
     if not info.online:
         return "offline"
     if info.state is None:
         return "unbekannt"
+    if info.type == "shutter" and info.state.replace(".", "", 1).isdigit():
+        pos = float(info.state)
+        return "offen" if pos <= 0 else "zu" if pos >= 100 else f"{info.state} % zu"
     return f"{info.state} {info.unit}".strip() if info.unit else info.state
 
 
@@ -39,7 +64,7 @@ def format_device(info: DeviceInfo) -> str:
     elif info.state is None:
         state = "unbekannt (kein Wert gemeldet)"
     else:
-        state = f"{info.state} {info.unit}".strip() if info.unit else info.state
+        state = _short_state(info)
     steuerbar = "steuerbar" if info.controllable else "nur lesbar"
     return (
         f"{info.id} | {info.name} | {info.room} | {_TYPE_DE[info.type]} | {state} | "
@@ -48,17 +73,36 @@ def format_device(info: DeviceInfo) -> str:
 
 
 def build_device_tools(service: DeviceService) -> list[Tool]:
-    async def list_devices(args: dict[str, Any], _: ToolContext) -> str:
+    async def list_devices(args: dict[str, Any], ctx: ToolContext) -> str:
         room = args.get("room")
         room = room.strip() if isinstance(room, str) else ""
         query = args.get("query")
         query = query.strip() if isinstance(query, str) else ""
+        wanted = args.get("state")
+        if isinstance(wanted, str) and wanted.strip():
+            wanted = _STATE_WORDS.get(wanted.strip().lower())
+            if wanted is None:
+                raise ToolError("state: an, aus, offen oder zu.")
+        else:
+            wanted = None
         if query:
             infos = service.search(query, 60)
             if room:
                 infos = [i for i in infos if i.room.lower() == room.lower()]
         else:
             infos = service.snapshot(room or None)
+        if wanted:
+            infos = [i for i in infos if _has_state(i, wanted)]
+            if not infos:
+                text = f"Kein passendes Gerät ist {wanted}."
+                ctx.final_replies.append(text)
+                return text
+            names = [f"{i.name} ({i.room})" for i in infos[:LIST_LIMIT]]
+            more = len(infos) - len(names)
+            text = f"{_STATE_TITLE[wanted]} sind: " + ", ".join(names)
+            text += f" und {more} weitere." if more > 0 else "."
+            ctx.final_replies.append(text)
+            return text
         if not infos:
             if query:
                 return f"Zu '{query}' gibt es kein Gerät."
@@ -152,6 +196,11 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 "properties": {
                     "room": room_param,
                     "query": {"type": "string", "description": "Suchbegriff (optional)."},
+                    "state": {
+                        "type": "string",
+                        "enum": ["an", "aus", "offen", "zu"],
+                        "description": "Nur Geräte in diesem Zustand (optional).",
+                    },
                 },
             },
             handler=list_devices,

@@ -38,7 +38,7 @@ Aktuelle Zeit: {now}
 # Anfangs im Speicher, bei ca. 30 Token/s auf der CPU spart das pro Antwort über eine Minute.
 LOCAL_PROMPT = """\
 Du bist Cat, der Heimassistent, und läufst lokal. Antworte kurz auf Deutsch, duze, ohne Emojis, erfinde nichts.
-Smart Home (openHAB) nur über Werkzeuge. Ruf get_state und set_state sofort mit dem Namen auf, den der Nutzer sagt (sie finden das Gerät selbst). list_devices(query=...) nur für Sammelfragen oder wenn der Name unklar ist (Rollladen: 0 = offen, 100 = zu). Zustände nie raten. Erfolg meldest du erst nach Werkzeug-Erfolg. Status, Anlagen und Schlösser sind nur lesbar. Türen und Schlösser bestätigt das System selbst. Hat ein Gerät keinen Wert, nenne ähnliche aus dem Ergebnis.
+Smart Home (openHAB) nur über Werkzeuge. Ruf get_state und set_state sofort mit dem Namen auf, den der Nutzer sagt (sie finden das Gerät selbst). list_devices(query=..., state=an|aus|offen|zu) nur für Sammelfragen ("welche Rollos sind offen") oder wenn der Name unklar ist. Zustände nie raten. Erfolg meldest du erst nach Werkzeug-Erfolg. Status, Anlagen und Schlösser sind nur lesbar. Türen und Schlösser bestätigt das System selbst. Hat ein Gerät keinen Wert, nenne ähnliche aus dem Ergebnis.
 Gedächtnis: "Erinnerungen" nur nutzen, wenn sie passen. memory_write nur bei "merk dir" oder klaren Dauerfakten, nie Passwörter.
 """
 
@@ -61,7 +61,7 @@ LOCAL_TOOLS = (
     "read_file",
 )
 LOCAL_BRIEFS = {
-    "list_devices": "Mehrere Geräte suchen/auflisten (query, room) mit Zustand. Für einzelne Geräte get_state/set_state nehmen.",
+    "list_devices": "Mehrere Geräte suchen (query, room), state filtert nach Zustand. Einzelne: get_state/set_state.",
     "get_state": "Zustand eines Geräts lesen (device: Name oder id). Für Fragen wie ist X an/offen.",
     "set_state": "Gerät steuern. command: on/off, 0-100 (Dimmer Prozent, Rollladen Prozent zu), up/down/stop.",
     "memory_search": "Notizen durchsuchen (query).",

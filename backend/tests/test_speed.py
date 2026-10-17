@@ -138,6 +138,32 @@ async def test_a_failed_command_still_goes_back_to_the_model(tmp_path: Path) -> 
     assert "nicht geklappt" in out and len(provider.calls) == 2  # Fehler: das Modell erklärt
 
 
+async def test_collective_question_with_state_filter_is_answered_without_the_model(
+    tmp_path: Path,
+) -> None:
+    service, _ = make(tmp_path)
+    service.seed_states("openhab", {"R": RawState("OFF"), "RO2": RawState("0")})
+    provider = FakeProvider([ToolCall("c1", "list_devices", {"query": "Rollo", "state": "offen"})])
+    out, _ = await run(agent_for(service, provider), "Welche Rollos sind offen?")
+    assert out == "Offen sind: Rollo Roman Control (Romans Zimmer)." and len(provider.calls) == 1
+
+
+async def test_state_filter_names_what_matches_and_says_when_nothing_does(
+    tmp_path: Path,
+) -> None:
+    service, _ = make(tmp_path)
+    service.seed_states("openhab", {"R": RawState("OFF"), "RO2": RawState("0")})
+    provider = FakeProvider(
+        [ToolCall("c1", "list_devices", {"state": "aus"})],
+        [ToolCall("c1", "list_devices", {"state": "an"})],
+    )
+    agent = agent_for(service, provider)
+    out, _ = await run(agent, "Was ist alles aus?")
+    assert out == "Aus sind: Deckenlicht Roman (Romans Zimmer)."
+    out, _ = await run(agent, "Welche Geräte sind an?")
+    assert out == "Kein passendes Gerät ist an."
+
+
 async def test_lookups_that_need_judgement_still_use_the_model(tmp_path: Path) -> None:
     service, _ = make(tmp_path)
     provider = FakeProvider(

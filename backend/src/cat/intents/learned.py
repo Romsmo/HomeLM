@@ -38,7 +38,7 @@ from cat.devices.commands import DeviceError, normalize_command
 from cat.devices.models import DeviceSpec
 from cat.devices.service import DeviceService
 from cat.intents.replies import confirm_text, state_line
-from cat.intents.text import fold, tokenize
+from cat.intents.text import fold, is_question, tokenize
 
 log = logging.getLogger("cat.learning")
 
@@ -48,12 +48,6 @@ _SLOT = re.compile(r"\{(dev|n)\}")
 _NUMBER = re.compile(r"^\d+(?:[.,]\d+)?$")
 LEARNABLE_TOOLS = {"set_state", "get_state"}
 IGNORED_TOOLS = {"list_devices"}  # Nachschlagen ändert nichts am Ergebnis
-# Satzanfänge von Fragen (gefaltet). Ein Befehl, den das Modell fälschlich mit get_state beantwortet
-# hat ("mach das licht an" -> "ist aus"), darf nicht als Frage gelernt werden.
-QUESTION_STARTS = frozenset(
-    "ist sind wie wo was welche welcher welches wer wann warum wieso wieviel wieviele steht stehen "
-    "laeuft brennt hat haben gibt kann zeig zeige sag sage nenn nenne lies".split()
-)
 
 
 def phrase_of(text: str) -> str:
@@ -218,7 +212,7 @@ class Learner:
             return None
         if any(t.tool not in LEARNABLE_TOOLS or not t.ok for t in used):
             return None  # andere Werkzeuge (Gedächtnis, Stage, Rechnen ...) oder ein Fehler
-        if all(t.tool == "get_state" for t in used) and not _asks(text):
+        if all(t.tool == "get_state" for t in used) and not is_question(text):
             return None
         built = self._actions(used)
         if built is None:
@@ -435,8 +429,3 @@ def _template_match(template: str, phrase: str) -> dict[str, str] | None:
     pattern += re.escape(template[last:])
     found = re.fullmatch(pattern, phrase)
     return {k: v for k, v in found.groupdict().items() if v} if found else None
-
-
-def _asks(text: str) -> bool:
-    tokens = tokenize(text)
-    return "?" in text or bool(tokens) and fold(tokens[0]) in QUESTION_STARTS

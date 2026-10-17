@@ -66,3 +66,16 @@ def parse_number(token: str) -> float | None:
 def significant(tokens: list[str]) -> list[str]:
     """Tokens ohne Füllwörter."""
     return [t for t in tokens if t not in FILLERS]
+
+
+# Satzanfänge von Fragen (gefaltet).
+QUESTION_STARTS = frozenset(
+    "ist sind wie wo was welche welcher welches wer wann warum wieso wieviel wieviele steht stehen "
+    "laeuft brennt hat haben gibt kann zeig zeige sag sage nenn nenne lies".split()
+)
+
+
+def is_question(text: str) -> bool:
+    """Fragezeichen oder Fragewort am Anfang. Sprachtexte haben nicht immer ein Fragezeichen."""
+    tokens = tokenize(text)
+    return "?" in text or bool(tokens) and tokens[0] in QUESTION_STARTS

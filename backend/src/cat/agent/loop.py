@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
 from cat.audit import AuditLog
 from cat.intents.claims import claims_action
+from cat.intents.text import is_question
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
@@ -120,6 +121,7 @@ class Agent:
                     # "Okay, das Licht ist aus" ohne Werkzeugaufruf: nichts davon zeigen.
                     if corrections == 0:
                         corrections += 1
+                        log.info("Korrektur: Modell antwortete ohne Werkzeug (%.80r)", joined)
                         messages.append({"role": "assistant", "content": joined})
                         messages.append({"role": "user", "content": CORRECTION})
                         continue
@@ -156,7 +158,7 @@ class Agent:
                 time.perf_counter() - tools_started,
                 ", ".join(c.name for c in calls),
             )
-            asks = "?" in _last_user_text(history)
+            asks = is_question(_last_user_text(history))
             decided = all(c.name == "set_state" or asks for c in calls)
             if ok_count == len(calls) and len(fresh) == len(calls) and decided:
                 # Jedes Werkzeug lieferte seinen fertigen Antworttext: kein zweiter Modellaufruf.
