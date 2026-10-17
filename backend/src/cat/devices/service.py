@@ -23,6 +23,14 @@ SETTLE_DELAY_S = 0.4
 
 
 @dataclass(frozen=True)
+class CommandResult:
+    spec: DeviceSpec
+    command: str  # kanonischer Befehl
+    text: str  # Ergebnistext für das Modell
+    info: DeviceInfo
+
+
+@dataclass(frozen=True)
 class RawState:
     state: str | None
     unit: str | None = None
@@ -330,6 +338,12 @@ class DeviceService:
     # --- Steuern ---
 
     async def command(self, ref: str, raw_command: str, source: str = "agent") -> str:
+        """Wie `command_detailed`, gibt nur den Ergebnistext zurück."""
+        return (await self.command_detailed(ref, raw_command, source)).text
+
+    async def command_detailed(
+        self, ref: str, raw_command: str, source: str = "agent"
+    ) -> CommandResult:
         """Führt einen Befehl aus. Wirft DeviceError, wenn er nicht ausgeführt wurde.
 
         Die Prüfreihenfolge ist fest und gilt für Chat, Sprache und Oberfläche gleichermaßen:
@@ -374,4 +388,5 @@ class DeviceService:
         await asyncio.sleep(self.settle_delay)
         info = await self.refresh_one(spec)
         shown = f"{info.state} {info.unit}".strip() if info.state is not None else "unbekannt"
-        return f"Befehl gesendet: {what}. Zustand jetzt: {shown}."
+        text = f"Befehl gesendet: {what}. Zustand jetzt: {shown}."
+        return CommandResult(spec, command, text, info)

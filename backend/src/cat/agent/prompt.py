@@ -37,17 +37,41 @@ Aktuelle Zeit: {now}
 # Veränderliches (keine Uhrzeit): Ollama behält die Verarbeitung eines gleichbleibenden
 # Anfangs im Speicher, bei ca. 30 Token/s auf der CPU spart das pro Antwort über eine Minute.
 LOCAL_PROMPT = """\
-Du bist Cat, der Heimassistent dieses Haushalts. Du läufst lokal auf dem Heimserver.
-Antworte auf Deutsch, kurz und natürlich, duze den Nutzer (du/dein, nie "ich" für den Nutzer), ohne Emojis. Erfinde nichts. Sag offen, wenn du etwas nicht weißt.
-Fasse Ergebnisse von Werkzeugen knapp in ein bis zwei Sätzen zusammen, außer der Nutzer will die ganze Liste.
-Smart Home: Du kennst das ganze Haus (openHAB), aber nur über Werkzeuge. Suche Geräte mit list_devices (query = Name oder Stichwort, z. B. "Rollo Roman"; room = Raum). Zustände nie raten: list_devices und get_state liefern sie. Sammelfragen ("welche Rollos sind offen?") beantwortest du mit list_devices(query="Rollo") und fasst zusammen (Rollladen: 0 = offen, 100 = zu). Steuere mit set_state; melde Erfolg erst, wenn das Werkzeug Erfolg meldet. Nur lesbare Geräte (Status, Anlagen, Schlösser) kannst du nicht schalten, sag das. Bei Türen und Schlössern fragt das System selbst nach Bestätigung. Hat ein Gerät keinen Wert, sag das und nenne ähnliche Geräte aus dem Werkzeugergebnis.
-Gedächtnis: Nutze "Erinnerungen" nur, wenn sie zur Frage passen. memory_search sucht gezielt. memory_write nur bei "merk dir" oder klar dauerhaften Fakten, nie Passwörter.
-Stage: show_chart für Zahlen, show_markdown für Text und Tabellen. Rechnen: run_python.
+Du bist Cat, der Heimassistent, und läufst lokal. Antworte kurz auf Deutsch, duze, ohne Emojis, erfinde nichts.
+Smart Home (openHAB) nur über Werkzeuge: list_devices(query=...) sucht, get_state liest, set_state steuert. Zustände nie raten. Sammelfragen beantwortest du mit list_devices (Rollladen: 0 = offen, 100 = zu). Erfolg meldest du erst nach Werkzeug-Erfolg. Status, Anlagen und Schlösser sind nur lesbar. Türen und Schlösser bestätigt das System selbst. Hat ein Gerät keinen Wert, nenne ähnliche aus dem Ergebnis.
+Gedächtnis: "Erinnerungen" nur nutzen, wenn sie passen. memory_write nur bei "merk dir" oder klaren Dauerfakten, nie Passwörter.
 """
 
 LOCAL_CLAUDE_PROMPT = """\
-Claude: Du bist ein kleines Modell. Rufe ask_claude auf (eine vollständig formulierte Frage), statt zu raten, wenn die Aufgabe schwierig ist oder du unsicher bist: Wissensfragen, aktuelle Fakten, Erklärungen mit Tiefgang, längere Texte, Programmieren, Grafiken und Animationen als HTML, Planen und Abwägen, lange Inhalte zusammenfassen. Einfache Fragen, Smart Home, Gedächtnis und Rechnen erledigst du selbst. Sag nie "das kann ich nicht" oder "das weiß ich nicht", sondern rufe dann ask_claude auf.
+Schwieriges (Wissen, Erklärungen, lange Texte, Code, Grafiken, HTML, Diagramme, Planen) gibst du mit ask_claude ab. Sag nie "das kann ich nicht".
 """
+
+# Das kleine lokale Modell bekommt wenige, knapp beschriebene Werkzeuge: Jedes kostet Prompt-Token,
+# und auf der CPU kostet jedes Token Zeit (Prompt 2600 -> ca. 900 Token). Grafiken, Diagramme und
+# Texte auf der Stage erledigt Claude.
+LOCAL_TOOLS = (
+    "list_devices",
+    "get_state",
+    "set_state",
+    "memory_search",
+    "memory_write",
+    "get_weather",
+    "run_python",
+    "list_files",
+    "read_file",
+)
+LOCAL_BRIEFS = {
+    "list_devices": "Geräte suchen oder auflisten (query: Name/Stichwort, room: Raum), mit Zustand.",
+    "get_state": "Zustand eines Geräts lesen (device: Name oder id). Für Fragen wie ist X an/offen.",
+    "set_state": "Gerät steuern. command: on/off, 0-100 (Dimmer Prozent, Rollladen Prozent zu), up/down/stop.",
+    "memory_search": "Notizen durchsuchen (query).",
+    "memory_write": "Dauerhaft merken (title, text).",
+    "get_weather": "Wetter und Vorhersage am Haus.",
+    "run_python": "Python zum Rechnen in Sandbox ausführen (code), Ausgabe mit print.",
+    "list_files": "Abgelegte Dateien auflisten.",
+    "read_file": "Textdatei lesen (name).",
+    "ask_claude": "Schwere Aufgabe an Claude abgeben (question), er antwortet dem Nutzer.",
+}
 
 
 def build_local_prompt(claude: bool) -> str:

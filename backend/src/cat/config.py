@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     local_num_ctx: int = 4096
     # Rechenthreads für Ollama: so viele wie `cpus` des Ollama-Containers (sonst drosselt das
     # CFS-Limit, gemessen: 2,4 statt 10 Token pro Sekunde bei 6 Threads auf 3 CPUs).
-    local_threads: int = 3
-    local_keep_alive: str = "10m"
+    local_threads: int = 5
+    local_keep_alive: str = "60m"
     # Wartezeit zwischen zwei Teilen der Antwort; die Verarbeitung eines langen Prompts auf der
     # CPU braucht oft über eine Minute, bevor das erste Wort kommt.
     local_timeout_s: float = 240.0
@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     stt_compute: str = "int8"
     stt_threads: int = 4
     tts_voice: str = "de_DE-thorsten-medium"
-    vad_silence_s: float = 1.5  # Pause bis zum Ende der Äußerung
+    vad_silence_s: float = 1.1  # Pause bis zum Ende der Äußerung
     voice_nice: int = 10  # Rechenthreads mit niedriger Priorität, Nextcloud und Co. haben Vorrang
     # Lernen aus Wiederholungen (intents/learned.py): Kurzbefehle ohne Sprachmodell.
     learn: bool = True

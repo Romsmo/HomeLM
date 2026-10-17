@@ -6,6 +6,7 @@ from cat.agent.tools import Tool, ToolContext, ToolError
 from cat.devices.commands import DeviceError
 from cat.devices.models import DeviceInfo
 from cat.devices.service import DeviceService
+from cat.intents.replies import confirm_text, state_line
 from cat.ws.protocol import StageShow
 
 LIST_LIMIT = 40
@@ -75,7 +76,7 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 )
         return "\n".join(lines)
 
-    async def get_state(args: dict[str, Any], _: ToolContext) -> str:
+    async def get_state(args: dict[str, Any], ctx: ToolContext) -> str:
         ref = args.get("device")
         if not isinstance(ref, str) or not ref:
             raise ToolError("Parameter 'device' fehlt.")
@@ -83,6 +84,7 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
             info = await service.get_state(ref)
         except DeviceError as exc:
             raise ToolError(str(exc)) from exc
+        final = state_line(service.resolve(info.id), info)
         lines = [format_device(info)]
         similar = service.similar_with_state(info)
         if similar:
@@ -91,16 +93,21 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 "(ob sie dasselbe Gerät sind, ist unklar):"
             )
             lines += [format_device(i) for i in similar]
+            first = similar[0]
+            final += f" Ähnliches Gerät: {state_line(service.resolve(first.id), first)}"
+        ctx.final_replies.append(final)
         return "\n".join(lines)
 
-    async def set_state(args: dict[str, Any], _: ToolContext) -> str:
+    async def set_state(args: dict[str, Any], ctx: ToolContext) -> str:
         ref, command = args.get("device"), args.get("command")
         if not isinstance(ref, str) or not isinstance(command, str):
             raise ToolError("Parameter 'device' und 'command' werden benötigt.")
         try:
-            return await service.command(ref, command, source="agent")
+            result = await service.command_detailed(ref, command, source="agent")
         except DeviceError as exc:
             raise ToolError(str(exc)) from exc
+        ctx.final_replies.append(confirm_text(result.spec, result.command))
+        return result.text
 
     async def show_devices(args: dict[str, Any], ctx: ToolContext) -> str:
         room = args.get("room")

@@ -73,14 +73,17 @@ services:
     container_name: homelm-ollama
     restart: unless-stopped
     environment:
-      OLLAMA_KEEP_ALIVE: 10m  # Modell nach 10 Minuten Leerlauf aus dem RAM entladen
+      OLLAMA_KEEP_ALIVE: 60m  # Modell nach 60 Minuten Leerlauf aus dem RAM entladen
       OLLAMA_MAX_LOADED_MODELS: "1"
       OLLAMA_NUM_PARALLEL: "1"
     volumes:
       - ./data/ollama:/root/.ollama
     mem_limit: 3500m
-    # Muss zu CAT_LOCAL_THREADS passen (Standard 3): mehr Threads als CPUs drosseln stark.
-    cpus: 3.0
+    # Muss zu CAT_LOCAL_THREADS passen (Standard 5): mehr Threads als CPUs drosseln stark.
+    # cpu_shares: Bei Last der anderen Dienste (Nextcloud, Trafficnetwork) haben diese Vorrang,
+    # bei freien Kernen darf das Modell sie nutzen (gemessen: 3 Threads 3,9 Token/s, 5 Threads 4,6).
+    cpus: 5.0
+    cpu_shares: 256
     # Kein veröffentlichter Port: nur Cat im selben Compose-Netz spricht mit Ollama.
 
   # Claude über das Abo des Nutzers (docs/claude.md). Startet NUR mit

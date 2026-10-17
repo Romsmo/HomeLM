@@ -1,9 +1,15 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 
 from cat.agent.loop import Agent, to_llm_messages
-from cat.agent.prompt import build_local_prompt, build_system_prompt
+from cat.agent.prompt import (
+    LOCAL_BRIEFS,
+    LOCAL_TOOLS,
+    build_local_prompt,
+    build_system_prompt,
+)
 from cat.agent.router import (
     ASK_CLAUDE,
     SPOKEN_HINT,
@@ -12,6 +18,7 @@ from cat.agent.router import (
     room_hint,
 )
 from cat.agent.tools import Tool, ToolContext, ToolRegistry
+from cat.agent.tools import _strip_descriptions as _strip
 from cat.claude.bridge import ClaudeBridge
 from cat.claude.budget import ClaudeBudget
 from cat.devices.service import DeviceService
@@ -92,11 +99,6 @@ def build_registry(
     return registry
 
 
-# Was die kleine lokale KI NICHT bekommt: Sie soll kein HTML schreiben oder Plugins entwerfen,
-# das ist Sache von Claude (und spart ca. 400 Prompt-Token, die auf der CPU Sekunden kosten).
-LOCAL_EXCLUDED_TOOLS = ("show_html", "propose_plugin")
-
-
 def build_local_provider(state: AppState) -> OllamaProvider:
     s = state.settings
     return OllamaProvider(
@@ -153,11 +155,12 @@ def _build_routed(
     claude: tuple[ClaudeBridge, ClaudeBudget] | None,
 ) -> RoutedResponder:
     settings = state.settings
-    local_registry = registry.only(
-        name for name in registry.names() if name not in LOCAL_EXCLUDED_TOOLS
-    )
+    local_registry = registry.only(LOCAL_TOOLS).compact(LOCAL_BRIEFS)
     if claude:
-        local_registry.register(build_ask_claude_tool())
+        ask = build_ask_claude_tool()
+        local_registry.register(
+            replace(ask, description=LOCAL_BRIEFS["ask_claude"], parameters=_strip(ask.parameters))
+        )
     agent = Agent(
         provider=provider or build_local_provider(state),
         registry=local_registry,

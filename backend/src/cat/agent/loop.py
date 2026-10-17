@@ -14,7 +14,7 @@ LIMIT_NOTICE = "(Ich breche hier ab: zu viele Werkzeugschritte für eine Antwort
 DEVICE_TOOLS = frozenset({"set_state", "get_state", "list_devices"})
 # So viele Zeichen einer Antwort werden zurückgehalten, bis klar ist, dass sie keine unbelegte
 # Erfolgsmeldung ("Okay, das Licht ist aus") ist, oder bis der erste Satz zu Ende ist.
-HOLD_CHARS = 120
+HOLD_CHARS = 80
 CORRECTION = (
     "Hinweis des Systems: Du hast kein Werkzeug aufgerufen, deshalb ist nichts passiert und "
     "deine Antwort stimmt nicht. Rufe jetzt das passende Werkzeug auf (set_state zum Schalten, "
@@ -130,9 +130,17 @@ class Agent:
                 ctx.escalation = Escalation("model", question if isinstance(question, str) else "")
                 return
             messages.append(_assistant_message("".join(step_text), calls))
+            ready = len(ctx.final_replies)
+            ok_count = 0
             for call in calls:
                 result = await self._execute(call, ctx)
+                ok_count += ctx.trace[-1].ok
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+            fresh = ctx.final_replies[ready:]
+            if ok_count == len(calls) and len(fresh) == len(calls):
+                # Jedes Werkzeug lieferte seinen fertigen Antworttext: kein zweiter Modellaufruf.
+                yield ("\n\n" if wrote_text else "") + "\n".join(fresh)
+                return
 
         if self._escalate_tool:
             ctx.escalation = Escalation("limit")

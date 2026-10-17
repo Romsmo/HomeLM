@@ -2,8 +2,8 @@
 
 Es gibt keine vorgefertigten Befehlssätze. Stattdessen beobachtet Cat, was bei einer Anfrage
 passiert ist (welche Geräte-Werkzeuge das Modell aufgerufen hat). Führt dieselbe Formulierung
-`learn_after` Mal zu denselben Aktionen, merkt sich Cat sie als Kurzbefehl und führt sie danach
-ohne Sprachmodell aus (Antwort in Millisekunden, auch ohne Internet).
+`learn_after` Mal (reine Abfragen: sofort) zu denselben Aktionen, merkt sich Cat sie als
+Kurzbefehl und führt sie danach ohne Sprachmodell aus (Antwort in Millisekunden, auch offline).
 
 Bausteine, damit nicht jede Formulierung einzeln gelernt werden muss:
 - Gerät als Platzhalter: Steht der Name (oder ein Synonym) des Geräts wörtlich im Satz, wird er
@@ -155,11 +155,15 @@ class Learner:
                     "does": self._describe(s),
                     "active": s.active,
                     "seen": s.count,
-                    "needed": self._after,
+                    "needed": self._needed(s),
                     "uses": s.uses,
                 }
             )
         return rows
+
+    def _needed(self, shortcut: Shortcut) -> int:
+        """Reine Abfragen ändern nichts und werden schon nach dem ersten Mal gelernt."""
+        return 1 if all(a.kind == "get" for a in shortcut.actions) else self._after
 
     def forget(self, shortcut_id: str) -> bool:
         for key, entry in list(self._entries.items()):
@@ -225,7 +229,7 @@ class Learner:
             entry = Shortcut(key=key, actions=actions)  # neu, oder andere Aktionen: von vorn
             self._entries[key] = entry
         became_active = False
-        if not entry.active and entry.count >= self._after:
+        if not entry.active and entry.count >= self._needed(entry):
             entry.active = True
             became_active = True
         self._trim()

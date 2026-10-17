@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from cat.llm.base import ToolSchema
@@ -37,6 +37,9 @@ class ToolContext:
     stage: StageStore
     # Vom Agenten gesetzt, wenn er abbricht, weil Claude übernehmen soll (siehe agent/router.py).
     escalation: Escalation | None = None
+    # Fertige Antworttexte, die Werkzeuge liefern (z. B. nach set_state): Der Agent gibt sie
+    # direkt aus und spart den zweiten Modellaufruf (auf der CPU 5 bis 15 Sekunden).
+    final_replies: list[str] = field(default_factory=list)
     # Alle Werkzeugaufrufe dieses Zuges in der Reihenfolge der Ausführung.
     trace: list[ToolTrace] = field(default_factory=list)
 
@@ -74,6 +77,19 @@ class ToolRegistry:
         wanted = set(names)
         return ToolRegistry({n: t for n, t in self._tools.items() if n in wanted})
 
+    def compact(self, briefs: dict[str, str]) -> "ToolRegistry":
+        """Kurzfassung für kleine Modelle: knappe Beschreibung, keine Parameter-Erklärtexte."""
+        return ToolRegistry(
+            {
+                name: replace(
+                    tool,
+                    description=briefs.get(name, tool.description.split(". ")[0]),
+                    parameters=_strip_descriptions(tool.parameters),
+                )
+                for name, tool in self._tools.items()
+            }
+        )
+
     def schemas(self) -> list[ToolSchema]:
         return [
             {
@@ -86,3 +102,11 @@ class ToolRegistry:
             }
             for t in self._tools.values()
         ]
+
+
+def _strip_descriptions(schema: Any) -> Any:
+    if isinstance(schema, dict):
+        return {k: _strip_descriptions(v) for k, v in schema.items() if k != "description"}
+    if isinstance(schema, list):
+        return [_strip_descriptions(v) for v in schema]
+    return schema
