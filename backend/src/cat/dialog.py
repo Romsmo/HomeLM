@@ -31,8 +31,11 @@ def _now() -> float:
     return time.time()
 
 
-async def handle_user_text(state: AppState, text: str) -> None:
-    """Nimmt eine Nutzernachricht an, streamt die Antwort und pflegt den Verlauf."""
+async def handle_user_text(state: AppState, text: str, room: str | None = None) -> None:
+    """Nimmt eine Nutzernachricht an, streamt die Antwort und pflegt den Verlauf.
+
+    Gerätebefehle erledigt zuerst der Fast-Path (ohne LLM). `room` ist der Raum des Satelliten.
+    """
     if state.run_lock.locked():
         await state.emit(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
         return
@@ -41,6 +44,10 @@ async def handle_user_text(state: AppState, text: str) -> None:
         state.chat.append(user)
         await state.emit(user)
         await state.emit(VoiceState(state="thinking"))
+
+        if state.settings.fastpath and await _try_fastpath(state, text, room):
+            await state.emit(VoiceState(state="idle"))
+            return
 
         assistant_id = uuid.uuid4().hex
         assistant = ChatMessage(id=assistant_id, role="assistant", text="", ts=_now())
@@ -61,3 +68,25 @@ async def handle_user_text(state: AppState, text: str) -> None:
                 state.chat.append(assistant)
             await state.emit(ChatDone(id=assistant_id))
             await state.emit(VoiceState(state="idle"))
+
+
+async def _try_fastpath(state: AppState, text: str, room: str | None) -> bool:
+    """True, wenn der Fast-Path den Befehl beantwortet hat (dann kein LLM-Aufruf)."""
+    try:
+        result = await state.fastpath.handle(text, room)
+    except Exception:
+        log.exception("Fast-Path fehlgeschlagen, der Agent übernimmt")
+        return False
+    if result is None:
+        return False
+    answer = ChatMessage(id=uuid.uuid4().hex, role="assistant", text=result.text, ts=_now())
+    state.chat.append(answer)
+    await state.emit(answer)
+    await state.emit(ChatDone(id=answer.id))
+    await state.audit.record(
+        "fastpath",
+        {"text": text, "device": result.device_id, "command": result.command},
+        result.text,
+        source="fastpath",
+    )
+    return True

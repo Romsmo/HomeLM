@@ -150,6 +150,7 @@ def test_ui_high_risk_denied_over_websocket(tmp_path: Path) -> None:
 def test_agent_tool_calls_are_audited_and_high_risk_still_asks(tmp_path: Path) -> None:
     client, backend = make(tmp_path, "test")
     app = client.app
+    app.state.cat.settings.fastpath = False  # type: ignore[attr-defined]  # hier soll der Agent antworten
     provider = FakeProvider(
         [ToolCall("c1", "set_state", {"device": "tuer", "command": "unlock"})],
         [TextDelta("Das habe ich nicht geschafft.")],

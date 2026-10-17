@@ -143,3 +143,20 @@
 - Entscheiden, welche Geräte Cat sehen darf (Vorschlag in `docs/devices.example.yaml`; auf dem Server liegt zunächst diese Auswahl harmloser Items, Modus `readonly`).
 - Für Phase-4-Abnahme "Test-Lampe per Chat": Testgerät nennen, Modus `test` freigeben.
 - Eine offene Rückfrage geht bei einem Verbindungsabbruch des Browsers verloren (der Server lehnt nach 60 s selbst ab, sicher).
+
+## Phase 5: Fast-Path-Intents
+
+**Gebaut**
+- `backend/src/cat/intents/`: Textaufbereitung (Umlaute/ß, Füllwörter, Zahlwörter bis 100), Regel-Parser für An/Aus, Helligkeit, Rollläden, Heizung, Temperatur lesen, Zustand abfragen, Türen/Garage; Wortschatz in `synonyms.yaml` (plus Nutzerdatei `data/config/synonyms.yaml`); Raum- und Namenszuordnung mit rapidfuzz. Doku und Beispiele: `docs/intents.md`.
+- Läuft **vor** dem Agenten (`dialog.py`) und über dieselben Prüfungen wie die Tools (Modus, Allowlist, Bestätigung bei `high`, Audit mit Quelle `fastpath`). Kein Raten: bei Mehrdeutigkeit, unbekanntem Raum oder Nicht-Gerätebefehl übernimmt der Agent. Standardraum (für Satelliten, Phase 7) vorbereitet.
+- Antworten kurz und natürlich ("Okay, Küchenlicht ist an.").
+
+**Abnahme: bestanden (Tests und Messung)**
+- "Mach das Licht im Wohnzimmer an" bzw. "Mach das Licht in der Küche an" läuft ohne LLM-Aufruf (Ende-zu-Ende-Test mit einem LLM-Fake, der bei einem Aufruf fehlschlagen würde; ein unklarer Satz geht danach an den LLM).
+- **Verarbeitungszeit** (Parser und Zuordnung): Median **0,11 ms** (13 Geräte), 0,9 ms (301 Geräte), Maximum 15,9 ms, also weit unter 100 ms. Der Backend-Aufruf kommt dazu.
+- 37 Befehls- und Abfragesätze (inkl. Füllwörter, Umgangssprache, Zahlwörter) und 11 Abgabefälle parametrisiert getestet; Backend jetzt 242 Tests.
+- **Nicht geprüft:** Erkennungsqualität mit echter Sprache (kommt erst mit Phase 6/7); Satzmuster gegen Ihre echten Gerätenamen (die Allowlist ist noch vorläufig).
+
+**Gefundene und behobene Fehler**
+- YAML liest die Schlüssel `on`/`off` als Wahrheitswerte: An/Aus-Wörter waren leer (Test hat es sofort gezeigt). Datei quotiert, Loader fängt es auch bei Nutzerdateien ab.
+- Zusammengesetzte Raumwörter ("Terrassenlampen") verdeckten die Geräteklasse.

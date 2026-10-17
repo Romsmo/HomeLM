@@ -141,6 +141,7 @@ def spec_of(device_id: str) -> DeviceSpec:
         ("heizung", "21,5", "21.5"),
         ("tuer", "unlock", "unlock"),
         ("garage", "auf", "open"),
+        ("rollo", "open", "up"),
     ],
 )
 def test_normalize_command_ok(device: str, raw: str, expected: str) -> None:
@@ -156,7 +157,6 @@ def test_normalize_command_ok(device: str, raw: str, expected: str) -> None:
         ("heizung", "heiß"),
         ("temp", "on"),
         ("tuer", "on"),
-        ("rollo", "open"),
     ],
 )
 def test_normalize_command_rejects(device: str, raw: str) -> None:

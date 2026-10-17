@@ -1,0 +1,32 @@
+# Synonyme für den Fast-Path (ohne LLM). Alles in Kleinschreibung, Umlaute wie geschrieben.
+# Eigene Ergänzungen: data/config/synonyms.yaml (gleiche Struktur, wird zusammengeführt).
+
+# Wörter, die auf einen Gerätetyp hindeuten (Teilwort genügt: "wohnzimmerlicht" enthält "licht").
+classes:
+  light: [licht, lampe, leuchte, beleuchtung, spot, strahler, lichter, lampen]
+  shutter: [rollo, rollos, rollladen, rolladen, rolllaeden, jalousie, markise, raffstore, beschattung]
+  thermostat: [heizung, thermostat, heizkoerper]
+  garage: [garage, garagentor, tor]
+  door: [tuer, haustuer, tür, haustür]
+  lock: [schloss, tuerschloss]
+  temperature: [temperatur, grad, warm, kalt, waermer, kaelter]
+
+# Verben und Schaltwörter. ("on" und "off" müssen in Anführungszeichen stehen: YAML liest sie sonst
+# als Wahrheitswerte.)
+"on": [an, ein, anschalten, einschalten, anmachen, anschaltest, aktiviere, aktivieren]
+"off": [aus, ausschalten, ausmachen, abschalten, ausschaltest, deaktiviere, deaktivieren]
+up: [hoch, rauf, herauf, hinauf, oeffne, oeffnen, auf, aufmachen]
+down: [runter, herunter, zu, schliesse, schliessen, zumachen]
+stop: [stop, stopp, halt, anhalten]
+lock: [verriegle, verriegeln, abschliessen, zuschliessen]
+unlock: [entriegle, entriegeln, aufschliessen, aufsperren]
+
+# Raum-Synonyme: Schlüssel = Raum aus der Allowlist (Kleinschreibung), Werte = andere Wörter dafür.
+rooms:
+  wohnzimmer: [wohnz, stube, wohnbereich]
+  schlafzimmer: [schlafz, schlafraum]
+  kueche: [kuechenbereich]
+  badezimmer: [bad, badezimmer, wc]
+  terrasse: [draussen, aussen, garten, balkon]
+  flur: [diele, eingang, eingangsbereich]
+  keller: [kellerraum]

@@ -25,6 +25,8 @@ _NUMERIC: dict[DeviceType, tuple[float, float]] = {
     "thermostat": (5, 30),
 }
 _ALIASES = {
+    "open": "up",
+    "close": "down",
     "an": "on",
     "ein": "on",
     "aus": "off",
