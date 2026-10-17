@@ -28,16 +28,19 @@ class Agent:
         self._max_steps = max_steps
         self._audit = audit
 
-    async def run(self, history: list[Message], ctx: ToolContext) -> AsyncIterator[str]:
+    async def run(
+        self, history: list[Message], ctx: ToolContext, system_extra: str = ""
+    ) -> AsyncIterator[str]:
         """Liefert den Antworttext in Teilen. `history` wird nicht verändert."""
         messages = list(history)
         schemas = self._registry.schemas()
         wrote_text = False
+        system = self._system_prompt() + (f"\n\n{system_extra}" if system_extra else "")
 
         for _ in range(self._max_steps):
             step_text: list[str] = []
             calls: list[ToolCall] = []
-            async for event in self._provider.stream(self._system_prompt(), messages, schemas):
+            async for event in self._provider.stream(system, messages, schemas):
                 if isinstance(event, TextDelta):
                     if not step_text and wrote_text:
                         yield "\n\n"  # Text nach einem Werkzeugschritt als neuer Absatz

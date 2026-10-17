@@ -42,6 +42,7 @@ async def handle_user_text(state: AppState, text: str, room: str | None = None) 
     async with state.run_lock:
         user = ChatMessage(id=uuid.uuid4().hex, role="user", text=text, ts=_now())
         state.chat.append(user)
+        state.memory.sessions.append("user", text)
         await state.emit(user)
         await state.emit(VoiceState(state="thinking"))
 
@@ -66,6 +67,7 @@ async def handle_user_text(state: AppState, text: str, room: str | None = None) 
             assistant.text = "".join(parts)
             if assistant.text:
                 state.chat.append(assistant)
+                state.memory.sessions.append("assistant", assistant.text)
             await state.emit(ChatDone(id=assistant_id))
             await state.emit(VoiceState(state="idle"))
 
@@ -81,6 +83,7 @@ async def _try_fastpath(state: AppState, text: str, room: str | None) -> bool:
         return False
     answer = ChatMessage(id=uuid.uuid4().hex, role="assistant", text=result.text, ts=_now())
     state.chat.append(answer)
+    state.memory.sessions.append("assistant", answer.text)
     await state.emit(answer)
     await state.emit(ChatDone(id=answer.id))
     await state.audit.record(

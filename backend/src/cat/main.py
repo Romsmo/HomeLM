@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from cat import __version__, auth
 from cat.agent.responder import build_responder
 from cat.config import Settings, get_settings
+from cat.llm.litellm_provider import LiteLLMProvider
+from cat.memory.sessions import summarize_old_sessions
 from cat.plugins.manager import PluginManager
 from cat.plugins.registry import PluginServices, build_plugins
 from cat.state import AppState
@@ -15,6 +18,29 @@ from cat.ws import endpoint
 from cat.ws.protocol import WidgetUpdate
 
 log = logging.getLogger("cat")
+
+
+def _start_summaries(state: AppState) -> "asyncio.Task[int] | None":
+    """Fasst alte Gespräche zusammen, wenn ein LLM konfiguriert ist (sonst nichts, nie Fehler)."""
+    settings = state.settings
+    if not (settings.summarize_sessions and settings.session_log and settings.responder == "agent"):
+        return None
+    provider = LiteLLMProvider(
+        settings.llm_model, settings.anthropic_api_key, settings.llm_max_tokens
+    )
+    if settings.anthropic_api_key is None and settings.llm_model.startswith(
+        ("anthropic/", "claude")
+    ):
+        return None
+
+    async def run() -> int:
+        try:
+            return await summarize_old_sessions(state.memory.sessions, state.memory.store, provider)
+        except Exception:
+            log.exception("Zusammenfassung alter Gespräche fehlgeschlagen")
+            return 0
+
+    return asyncio.create_task(run())
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -37,9 +63,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await plugins.start()
+        summary_task = _start_summaries(state)
         try:
             yield
         finally:
+            if summary_task:
+                summary_task.cancel()
             await plugins.stop()
 
     app = FastAPI(title="Cat", version=__version__, lifespan=lifespan)

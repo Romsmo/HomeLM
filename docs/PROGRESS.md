@@ -160,3 +160,21 @@
 **Gefundene und behobene Fehler**
 - YAML liest die Schlüssel `on`/`off` als Wahrheitswerte: An/Aus-Wörter waren leer (Test hat es sofort gezeigt). Datei quotiert, Loader fängt es auch bei Nutzerdateien ab.
 - Zusammengesetzte Raumwörter ("Terrassenlampen") verdeckten die Geräteklasse.
+
+## Phase 8: Second Brain
+
+**Gebaut**
+- `memory/notes.py`: Markdown-Notizen mit Frontmatter unter `data/memory/<thema>/<titel>.md` (Quelle der Wahrheit, Pfadschutz, Größen- und Mengenlimits, gleiche Titel ergänzen). `memory/index.py`: SQLite-FTS5-Index als Wegwerf-Cache, gleicht sich bei jeder Suche mit den Dateien ab; Wortanfangs-Suche statt Stemmer; `VectorIndex`-Schnittstelle vorbereitet. `memory/service.py`: Werkzeuge `memory_search`, `memory_write`, `memory_list`, Kontext für den Prompt, Ablehnung von Geheimnissen. `memory/sessions.py`: Sitzungsverlauf als JSONL und Zusammenfassung alter Sitzungen in Notizen. Doku: `docs/memory.md`.
+- Agent: relevante Erinnerungen werden vor der Antwort lokal gesucht und in den Systemprompt gegeben (`system_extra`); der Prompt erklärt, wann geschrieben wird.
+
+**Abnahme: bestanden (Tests)**
+- "Merk dir, dass ich Kaffee ohne Zucker trinke" wird als Datei `vorlieben/kaffee.md` gespeichert; in einer **neuen App-Instanz** (Neustart) mit **anderem Modell** (anderer Fake-Anbieter) landet die Erinnerung beim Satz "Wie trinke ich meinen Kaffee?" im Prompt, bei einer unabhängigen Frage nicht. Ein Test löscht außerdem die Index-Datei, danach wird aus den Dateien neu aufgebaut.
+- Backend 265 Tests.
+- **Nicht geprüft:** Verhalten mit dem echten Modell (kein API-Schlüssel), Trefferqualität bei vielen Notizen, Zusammenfassung gegen die Live-API.
+
+**Gefundene und behobene Fehler**
+- SQLite-Verbindungen wurden nach `with` nicht geschlossen (Datei blieb offen; unter Windows ein Fehler, unter Linux ein Handle-Leck). Jetzt immer geschlossen.
+- Mein Muster gegen Geheimnisse enthielt durch einen Patch-Fehler ein Backspace-Zeichen statt `\b`; der Test hat es sofort gezeigt.
+
+**Offene Punkte**
+- Notizen und Sitzungsverläufe liegen im Klartext in `data/`: in die Sicherung aufnehmen.

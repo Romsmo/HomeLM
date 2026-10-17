@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
 
@@ -8,6 +9,7 @@ from cat.devices.service import DeviceService
 from cat.devices.tools import build_device_tools
 from cat.llm.base import LLMError, LLMProvider
 from cat.llm.litellm_provider import LiteLLMProvider
+from cat.memory.service import MemoryService, build_memory_tools
 from cat.stage.tools import register_stage_tools
 from cat.state import AppState
 from cat.ws.protocol import ChatMessage
@@ -25,8 +27,11 @@ class AgentResponder:
     async def reply(self, history: list[ChatMessage]) -> AsyncIterator[str]:
         messages = to_llm_messages([(m.role, m.text) for m in history])
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
+        question = next((m.text for m in reversed(history) if m.role == "user"), "")
+        # Relevante Erinnerungen vor der Antwort in den Prompt holen (FTS5, lokal, ohne LLM).
+        extra = await asyncio.to_thread(self._state.memory.context_for, question)
         try:
-            async for delta in self._agent.run(messages, ctx):
+            async for delta in self._agent.run(messages, ctx, system_extra=extra):
                 yield delta
         except LLMError as exc:
             # Verständliche Meldung statt Stacktrace; sie erscheint als Assistentennachricht.
@@ -34,12 +39,17 @@ class AgentResponder:
 
 
 def build_registry(
-    extra_tools: Sequence[Tool] = (), devices: DeviceService | None = None
+    extra_tools: Sequence[Tool] = (),
+    devices: DeviceService | None = None,
+    memory: MemoryService | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     register_stage_tools(registry)
     if devices is not None:
         for tool in build_device_tools(devices):
+            registry.register(tool)
+    if memory is not None:
+        for tool in build_memory_tools(memory):
             registry.register(tool)
     for tool in extra_tools:
         registry.register(tool)
@@ -59,7 +69,7 @@ def build_responder(
     )
     agent = Agent(
         provider=provider,
-        registry=build_registry(extra_tools, devices=state.devices),
+        registry=build_registry(extra_tools, devices=state.devices, memory=state.memory),
         system_prompt=build_system_prompt,
         max_steps=settings.agent_max_steps,
         audit=state.audit,

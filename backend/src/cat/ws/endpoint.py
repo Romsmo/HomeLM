@@ -87,6 +87,7 @@ async def _dispatch(
                 await conn.send(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
                 return
             state.chat.clear()
+            state.memory.sessions.new_session()
             await state.emit(ChatClear())
         case ClientStageClear():
             state.stage.clear()

@@ -10,6 +10,7 @@ from cat.devices.confirm import ConfirmManager
 from cat.devices.service import DeviceService
 from cat.intents.fastpath import FastPath
 from cat.intents.vocabulary import load_vocabulary
+from cat.memory.service import MemoryService
 from cat.stage.store import StageStore
 from cat.ws.hub import Hub
 from cat.ws.protocol import ChatMessage, ServerEvent, WidgetUpdate
@@ -42,6 +43,9 @@ class AppState:
             self.emit,
             self.audit,
             self.confirm,
+        )
+        self.memory = MemoryService(
+            settings.memory_dir, settings.sessions_dir, settings.session_log
         )
         self.fastpath = FastPath(self.devices, load_vocabulary(settings.synonyms_file))
         # Wird vom Plugin-Manager gesetzt (Phase 3): Widget neu laden, True bei Erfolg.

@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Gerätesteuerung. readonly = nur lesen (Standard), test = nur Geräte mit test: true,
     # full = alle freigegebenen Geräte. Erst nach ausdrücklicher Freigabe auf full stellen.
     device_control: Literal["readonly", "test", "full"] = "readonly"
+    # Gedächtnis (Phase 8): Notizen unter data/memory, Gesprächsverlauf unter data/sessions.
+    session_log: bool = True
+    # Alte Gespräche per LLM in Notizen zusammenfassen (braucht Internet und API-Schlüssel).
+    summarize_sessions: bool = True
     # Fast-Path: Gerätebefehle ohne LLM (Phase 5). Abschaltbar zum Vergleichen.
     fastpath: bool = True
     # openHAB (Phase 4). Token optional (lokal ist die REST-API oft offen).
@@ -60,6 +64,14 @@ class Settings(BaseSettings):
     weather_lon: float | None = None
     weather_name: str = ""
     weather_ttl_s: float = 600.0
+
+    @property
+    def memory_dir(self) -> Path:
+        return self.data_dir / "memory"
+
+    @property
+    def sessions_dir(self) -> Path:
+        return self.data_dir / "sessions"
 
     @property
     def synonyms_file(self) -> Path:
