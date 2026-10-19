@@ -46,6 +46,7 @@ class Agent:
         audit: AuditLog | None = None,
         escalate_tool: str | None = None,
         extra_in_user: bool = False,
+        hidden_tools: frozenset[str] = frozenset(),
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -60,13 +61,16 @@ class Agent:
         # Der Systemprompt samt Werkzeugen bleibt dadurch unverändert, und Ollama muss ihn nicht
         # jedes Mal neu verarbeiten (auf der CPU sind das sonst über eine Minute).
         self._extra_in_user = extra_in_user
+        # Werkzeuge, die das Modell nicht als Schema sieht, sondern als Kurzzeile schreibt
+        # ("S|Licht Büro|off", siehe _compact_calls): wenige Ausgabe-Token, schnellere Antwort.
+        self._hidden = hidden_tools
 
     async def run(
         self, history: list[Message], ctx: ToolContext, system_extra: str = ""
     ) -> AsyncIterator[str]:
         """Liefert den Antworttext in Teilen. `history` wird nicht verändert."""
         messages = list(history)
-        schemas = self._registry.schemas()
+        schemas = self._registry.schemas(self._hidden)
         wrote_text = False
         system = self._system_prompt()
         if system_extra and self._extra_in_user:
@@ -111,17 +115,36 @@ class Agent:
                     yield joined
                     held.clear()
                     continue
+                if self._hidden and not started:
+                    # Anfang der Antwort puffern: "S|..." ist eine Kurzzeile und wird nie angezeigt.
+                    joined = "".join(step_text)
+                    if _COMPACT_START.match(joined):
+                        hold, held = True, [joined]
+                        continue
+                    if not joined.strip() or joined.strip() in _COMPACT_LETTERS:
+                        continue
+                    if wrote_text:
+                        yield "\n\n"
+                    started = True
+                    yield joined
+                    continue
                 if wrote_text and not started:
                     yield "\n\n"
                 started = True
                 yield event.text
 
             model_s = time.perf_counter() - model_started
-            if not calls and (typed := _typed_call("".join(step_text), self._registry)):
-                # Aufruf als Text geschrieben ("get_state(device=...)"): trotzdem ausführen.
-                calls.append(typed)
+            if not calls and (typed := _typed_calls("".join(step_text), self._registry)):
+                # Kurzzeile ("S|Licht Büro|off") oder als Text geschriebener Aufruf
+                # ("get_state(device=...)"): ausführen.
+                calls.extend(typed)
                 step_text.clear()
                 held.clear()
+            elif not calls and not started and not held and step_text:
+                if wrote_text:
+                    yield "\n\n"
+                started = True
+                yield "".join(step_text)  # kurzer Text, der noch im Puffer war
             if held:
                 joined = "".join(held)
                 if (ctx.device_related or claims_action(joined)) and not calls:
@@ -181,7 +204,7 @@ class Agent:
         """Lässt den Anbieter Systemprompt und Werkzeuge vorab verarbeiten (falls er das kann)."""
         warm = getattr(self._provider, "warm", None)
         if warm is not None:
-            await warm(self._system_prompt(), self._registry.schemas())
+            await warm(self._system_prompt(), self._registry.schemas(self._hidden))
 
     async def _execute(self, call: ToolCall, ctx: ToolContext, user_text: str = "") -> str:
         """Führt ein Werkzeug aus und protokolliert jeden Aufruf (auch Fehlschläge)."""
@@ -217,20 +240,63 @@ class Agent:
 
 
 _CALL_TEXT = re.compile(r"^\s*(\w+)\((.*)\)\s*$", re.DOTALL)
+_COMPACT_START = re.compile(r"^\s*[SGLA]\|")
+_COMPACT_LINE = re.compile(r"^\s*([SGLA])\|(.*)$")
+_COMPACT_LETTERS = frozenset("SGLA")
+MAX_COMPACT_CALLS = 4
 
 
-def _typed_call(text: str, registry: ToolRegistry) -> ToolCall | None:
-    """Kleine Modelle schreiben Aufrufe manchmal als Text, statt sie auszulösen."""
+def _clean(part: str) -> str:
+    return part.strip(" `\"'")
+
+
+def _compact_calls(text: str, registry: ToolRegistry) -> list[ToolCall]:
+    """Kurzzeilen des Modells als Werkzeugaufrufe. Eine Zeile je Aufruf:
+
+    S|Gerät|Befehl (set_state), G|Gerät (get_state), L|Stichwort|Zustand (list_devices),
+    A|Stichwort|Zustand (list_automations). Steht in der Antwort etwas anderes, gilt sie nicht.
+    """
+    calls: list[ToolCall] = []
+    for index, line in enumerate(raw for raw in text.splitlines() if raw.strip()):
+        match = _COMPACT_LINE.match(line)
+        if match is None:
+            return []
+        kind = match.group(1)
+        parts = [_clean(p) for p in match.group(2).split("|")]
+        if kind == "S" and len(parts) >= 2 and parts[0] and parts[1]:
+            name, args = "set_state", {"device": parts[0], "command": parts[1]}
+        elif kind == "G" and parts[0]:
+            name, args = "get_state", {"device": parts[0]}
+        elif kind in ("L", "A"):
+            name = "list_devices" if kind == "L" else "list_automations"
+            args = {}
+            if parts[0]:
+                args["query"] = parts[0]
+            if len(parts) > 1 and parts[1]:
+                args["state"] = parts[1]
+        else:
+            return []
+        if registry.get(name) is None:
+            return []
+        calls.append(ToolCall(f"compact-{index}", name, args))
+    return calls[:MAX_COMPACT_CALLS]
+
+
+def _typed_calls(text: str, registry: ToolRegistry) -> list[ToolCall]:
+    """Kleine Modelle schreiben Aufrufe als Text statt sie auszulösen: Kurzzeilen oder
+    `name(arg="...")`."""
+    if compact := _compact_calls(text, registry):
+        return compact
     match = _CALL_TEXT.match(text)
     if match is None or registry.get(match.group(1)) is None:
-        return None
+        return []
     try:
         call = ast.parse(f"f({match.group(2)})", mode="eval").body
         assert isinstance(call, ast.Call) and not call.args
         args = {k.arg: ast.literal_eval(k.value) for k in call.keywords if k.arg}
     except (SyntaxError, ValueError, AssertionError):
-        return None
-    return ToolCall("text-call", match.group(1), args)
+        return []
+    return [ToolCall("text-call", match.group(1), args)]
 
 
 def _last_user_text(history: list[Message]) -> str:

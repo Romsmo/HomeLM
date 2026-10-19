@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from cat.agent.loop import Agent, to_llm_messages
 from cat.agent.prompt import (
+    COMPACT_HIDDEN,
     LOCAL_BRIEFS,
     LOCAL_TOOLS,
     build_local_prompt,
@@ -170,12 +171,13 @@ def _build_routed(
     agent = Agent(
         provider=provider or build_local_provider(state),
         registry=local_registry,
-        system_prompt=lambda: build_local_prompt(claude is not None),
+        system_prompt=lambda: build_local_prompt(claude is not None, settings.local_compact),
         # Jeder Schritt kostet auf der CPU Sekunden: lieber früh an Claude übergeben.
         max_steps=min(settings.agent_max_steps, 4),
         audit=state.audit,
         escalate_tool=ASK_CLAUDE if claude else None,
         extra_in_user=True,
+        hidden_tools=COMPACT_HIDDEN if settings.local_compact else frozenset(),
     )
     bridge, budget = claude if claude else (None, None)
     return RoutedResponder(state, agent, settings.local_model, bridge, budget)

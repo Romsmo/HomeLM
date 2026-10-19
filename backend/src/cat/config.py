@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # CFS-Limit, gemessen: 2,4 statt 10 Token pro Sekunde bei 6 Threads auf 3 CPUs).
     local_threads: int = 5
     local_keep_alive: str = "60m"
+    # Geräte per Kurzzeile ("S|Licht|off") statt Werkzeugaufruf: ca. 3 s schneller je Befehl.
+    local_compact: bool = True
     # Wartezeit zwischen zwei Teilen der Antwort; die Verarbeitung eines langen Prompts auf der
     # CPU braucht oft über eine Minute, bevor das erste Wort kommt.
     local_timeout_s: float = 240.0

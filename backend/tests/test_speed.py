@@ -452,3 +452,84 @@ async def test_markises_and_rollos_can_be_asked_separately(tmp_path: Path) -> No
     assert await ask("Rollos") == "Offen sind: Romans Rollo (Romans Zimmer)."
     both = await ask("Rollos oder Markisen")
     assert "Markise Nord" in both and "Romans Rollo" in both
+
+
+# --- Kurzzeilen statt Werkzeugaufruf (local_compact) ---
+
+
+def compact_agent(service: DeviceService, provider: FakeProvider) -> Agent:
+    from cat.agent.prompt import COMPACT_HIDDEN
+
+    registry = ToolRegistry()
+    for tool in build_device_tools(service):
+        registry.register(tool)
+    return Agent(provider, registry, lambda: "SYSTEM", hidden_tools=COMPACT_HIDDEN)
+
+
+async def test_a_short_line_is_executed_and_never_shown(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider([TextDelta("S|Deckenlicht Roman|off")])
+    out, ctx = await run(compact_agent(service, provider), "Mach das Deckenlicht aus", True)
+    assert out == "Okay, Deckenlicht Roman ist aus." and backend.sent == [("roman", "off")]
+    assert len(provider.calls) == 1 and ctx.trace[0].tool == "set_state"
+    assert "set_state" not in provider.calls[0]["tool_names"]  # das Modell sieht kein Schema
+
+
+async def test_a_short_line_arriving_in_small_pieces_is_not_leaked(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider(
+        [TextDelta("S"), TextDelta("|Deckenlicht"), TextDelta(" Roman|"), TextDelta("on")]
+    )
+    out, _ = await run(compact_agent(service, provider), "Schalte das Deckenlicht ein", False)
+    assert out == "Okay, Deckenlicht Roman ist an." and backend.sent == [("roman", "on")]
+
+
+async def test_several_short_lines_are_several_calls(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider([TextDelta("S|Deckenlicht Roman|on\nS|Romans Rollo|down")])
+    out, _ = await run(compact_agent(service, provider), "Licht an und Rollo runter", True)
+    assert out == "Okay, Deckenlicht Roman ist an.\nOkay, Romans Rollo fährt runter."
+    assert len(backend.sent) == 2
+
+
+async def test_state_questions_and_lists_work_as_short_lines(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    service.seed_states("openhab", {"RO2": RawState("0")})
+    out, _ = await run(
+        compact_agent(service, FakeProvider([TextDelta("G|Deckenlicht Roman")])),
+        "Ist das Deckenlicht an?",
+        True,
+    )
+    assert out == "Deckenlicht Roman ist aus."
+    out, _ = await run(
+        compact_agent(service, FakeProvider([TextDelta("L|Rollos oder Markisen|offen")])),
+        "Welche Rollos sind offen?",
+        True,
+    )
+    assert out == "Offen sind: Rollo Roman Control (Romans Zimmer)."
+
+
+async def test_normal_answers_starting_with_a_command_letter_are_shown_unchanged(
+    tmp_path: Path,
+) -> None:
+    service, _ = make(tmp_path)
+    for text in ("Sehr gern!", "Gern geschehen.", "S", "Alles klar, das ist ein Test."):
+        provider = FakeProvider([TextDelta(text)])
+        out, _ = await run(compact_agent(service, provider), "Danke", False)
+        assert out == text
+
+
+async def test_a_line_with_extra_text_is_not_treated_as_a_command(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider([TextDelta("S|Deckenlicht Roman|off\nDas habe ich gemacht.")])
+    out, _ = await run(compact_agent(service, provider), "Danke", False)
+    assert backend.sent == [] and "Das habe ich gemacht." in out
+
+
+def test_compact_mode_is_the_default_and_the_prompt_teaches_the_format() -> None:
+    from cat.agent.prompt import build_local_prompt
+
+    assert Settings(_env_file=None).local_compact is True  # type: ignore[call-arg]
+    prompt = build_local_prompt(claude=True, compact=True)
+    assert "S|Gerät|Befehl" in prompt and "L|Stichwort|Zustand" in prompt and "ask_claude" in prompt
+    assert "set_state(device" not in prompt

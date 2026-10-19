@@ -50,11 +50,33 @@ CASES: list[tuple[str, str | None, Any]] = [
     ("Welche Lichter sind an?", "list_devices",
      lambda a: str(a.get("state", "")).lower() in {"an", "on", "ein"}),
     ("Welche Automationen gibt es für das Treppenhaus?", "list_automations", lambda a: True),
+    ("Welche Automationen sind aktiv?", "list_automations", lambda a: True),
     ("Wie wird das Wetter morgen?", "get_weather", lambda a: True),
     ("Merk dir, dass ich morgens Hafermilch trinke.", "memory_write", lambda a: True),
     ("Wie viele Minuten hat eine Stunde?", None, lambda a: True),
     ("Wer hat Goethes Faust geschrieben?", None, lambda a: True),
 ]
+
+
+def parse_compact(text: str) -> tuple[str | None, dict]:
+    line = text.strip().splitlines()[0].strip() if text.strip() else ""
+    parts = [p.strip() for p in line.split("|")]
+    if len(parts) >= 2 and parts[0] in ("S", "G", "L", "A"):
+        if parts[0] == "A":
+            args = {"query": parts[1]} if parts[1] else {}
+            if len(parts) >= 3:
+                args["state"] = parts[2]
+            return "list_automations", args
+        if parts[0] == "S" and len(parts) >= 3:
+            return "set_state", {"device": parts[1], "command": parts[2]}
+        if parts[0] == "G":
+            return "get_state", {"device": parts[1]}
+        if parts[0] == "L":
+            args = {"query": parts[1]}
+            if len(parts) >= 3:
+                args["state"] = parts[2]
+            return "list_devices", args
+    return None, {}
 
 
 def say(text: str) -> None:
@@ -84,6 +106,7 @@ async def main() -> None:
     agent = responder._agent  # type: ignore[attr-defined]
     system, schemas = agent._system_prompt(), agent._registry.schemas()
     base = settings.ollama_url.rstrip("/")
+    schemas = agent._registry.schemas(agent._hidden)  # wie im Betrieb (Geräte als Kurzzeile)
     alias = {"set_state": "set", "get_state": "get", "list_devices": "list"}
     keys = {"device": "d", "command": "c", "state": "s", "query": "q"}
     back = {v: k for k, v in alias.items()}
@@ -136,6 +159,8 @@ async def main() -> None:
                     calls = msg.get("tool_calls") or []
                     got = calls[0]["function"]["name"] if calls else None
                     args = calls[0]["function"].get("arguments", {}) if calls else {}
+                    if not calls:
+                        got, args = parse_compact(msg.get("content", ""))
                     if short and got:
                         got = back.get(got, got)
                         inv = {v: k for k, v in keys.items()}

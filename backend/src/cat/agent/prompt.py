@@ -42,6 +42,18 @@ Smart Home (openHAB) nur über Werkzeuge, mit dem Namen, den der Nutzer sagt (si
 Gedächtnis: "Erinnerungen" nur nutzen, wenn sie passen. memory_write nur bei "merk dir" oder klaren Dauerfakten, nie Passwörter; Notizen in der dritten Person ("Der Nutzer trinkt ..."), Antworten an den Nutzer im Du.
 """
 
+# Kompakte Fassung: Geräte per Kurzzeile statt Werkzeugaufruf. Ein Werkzeugaufruf kostet ca. 29
+# Ausgabe-Token (4 s), eine Kurzzeile ca. 9 (1,5 s); dazu entfallen vier Werkzeugschemas im Prompt.
+LOCAL_PROMPT_COMPACT = """\
+Du bist Cat, der Heimassistent, und läufst lokal. Antworte kurz auf Deutsch, duze, ohne Emojis, erfinde nichts.
+Smart Home (openHAB) steuerst und liest du NUR mit genau einer Zeile ohne weiteren Text, mit dem Namen, den der Nutzer sagt (das System findet das Gerät selbst):
+S|Gerät|Befehl schaltet (Befehl: on, off, up, down, stop oder 0-100; Rollladen: Prozent zu). G|Gerät liest den Zustand. L|Stichwort|Zustand listet Geräte (Zustand: an, aus, offen, zu; Stichwort darf fehlen). A|Stichwort|Zustand listet Automationen (Regeln; Zustand: aktiv oder aus).
+Befehle (an, aus, auf, zu, hoch, runter, Prozent) sofort mit S, nie vorher G. Beispiele: "Mach das Licht im Büro aus" -> S|Licht Büro|off. "Ist das Licht im Büro an?" -> G|Licht Büro. "Welche Rollos und Markisen sind offen?" -> L|Rollos oder Markisen|offen. "Welche Automationen gibt es für das Treppenhaus?" -> A|Treppenhaus. Zustände nie raten. Erfolg meldest du erst nach dem Ergebnis. Status, Anlagen und Schlösser sind nur lesbar. Türen und Schlösser bestätigt das System selbst.
+Gedächtnis: "Erinnerungen" nur nutzen, wenn sie passen. memory_write nur bei "merk dir" oder klaren Dauerfakten, nie Passwörter; Notizen in der dritten Person ("Der Nutzer trinkt ..."), Antworten an den Nutzer im Du.
+"""
+# Diese Werkzeuge sieht das Modell im kompakten Modus nicht als Schema (nur als Kurzzeile).
+COMPACT_HIDDEN = frozenset({"set_state", "get_state", "list_devices", "list_automations"})
+
 LOCAL_CLAUDE_PROMPT = """\
 Schwieriges (Wissen, Erklärungen, lange Texte, Code, Grafiken, HTML, Diagramme, Planen) gibst du mit ask_claude ab. Sag nie "das kann ich nicht".
 """
@@ -78,8 +90,9 @@ LOCAL_BRIEFS = {
 }
 
 
-def build_local_prompt(claude: bool) -> str:
-    return LOCAL_PROMPT + (LOCAL_CLAUDE_PROMPT if claude else "")
+def build_local_prompt(claude: bool, compact: bool = False) -> str:
+    base = LOCAL_PROMPT_COMPACT if compact else LOCAL_PROMPT
+    return base + (LOCAL_CLAUDE_PROMPT if claude else "")
 
 
 def build_context(now: datetime | None = None) -> str:

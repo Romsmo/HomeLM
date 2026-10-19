@@ -92,7 +92,7 @@ class ToolRegistry:
             }
         )
 
-    def schemas(self) -> list[ToolSchema]:
+    def schemas(self, hide: frozenset[str] = frozenset()) -> list[ToolSchema]:
         return [
             {
                 "type": "function",
@@ -103,6 +103,7 @@ class ToolRegistry:
                 },
             }
             for t in self._tools.values()
+            if t.name not in hide
         ]
 
 

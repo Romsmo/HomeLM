@@ -102,7 +102,8 @@ async def test_local_gets_a_small_toolset_with_ask_claude(make) -> None:  # type
     env = make([TextDelta("ok")], claude=FakeClaude())
     await env.ask("Hallo")
     names = env.provider.calls[0]["tool_names"]
-    assert "ask_claude" in names and "set_state" in names and "memory_search" in names
+    assert "ask_claude" in names and "memory_search" in names
+    assert "set_state" not in names  # Geräte kommen als Kurzzeile (local_compact), nicht als Schema
     assert "show_html" not in names and "propose_plugin" not in names
 
 
