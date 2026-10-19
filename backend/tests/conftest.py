@@ -9,6 +9,13 @@ from cat.main import create_app
 PASSWORD = "test-passwort"
 
 
+@pytest.fixture(autouse=True)
+def _no_people_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cat fragt im Chat nach dem Namen: das würde alle anderen Tests verfälschen. Die Tests
+    für Personen schalten es mit Settings(people=True) ausdrücklich ein."""
+    monkeypatch.setenv("CAT_PEOPLE", "false")
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Settings(

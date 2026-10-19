@@ -8,6 +8,7 @@ from pathlib import Path
 from cat.config import Settings
 from cat.devices.service import DeviceService
 from cat.voice.pipeline import VoiceEngine
+from cat.voice.speaker import SpeakerEncoder, ensure_model
 from cat.voice.stt import WhisperStt
 from cat.voice.tts import PiperTts
 from cat.voice.vad import SileroVad, VadConfig
@@ -76,3 +77,16 @@ async def load_engine(engine: VoiceEngine, settings: Settings) -> None:
         settings.tts_voice,
         time.perf_counter() - started,
     )
+    if settings.speaker and settings.people:
+        await _load_speaker(engine, settings)
+
+
+async def _load_speaker(engine: VoiceEngine, settings: Settings) -> None:
+    """Stimmerkennung nachladen (einmaliger Download). Fehler sind nicht schlimm."""
+    try:
+        path = await asyncio.to_thread(ensure_model, settings.models_dir)
+        if path is not None:
+            engine.speaker = await asyncio.to_thread(SpeakerEncoder, path)
+            log.info("Sprechererkennung bereit")
+    except Exception:
+        log.warning("Sprechererkennung konnte nicht geladen werden", exc_info=True)

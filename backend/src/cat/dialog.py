@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 from cat.claude.text import is_explicit_request, needs_claude
 from cat.intents.fillers import category_for
+from cat.people.service import NONE
 from cat.state import AppState
 from cat.voice.pipeline import Reply
 from cat.ws.protocol import (
@@ -80,6 +81,8 @@ async def handle_user_text(
     spoken: bool = False,
     on_delta: OnDelta | None = None,
     on_filler: OnDelta | None = None,
+    channel: str = "chat",
+    voice_pcm: bytes | None = None,
     manage_voice_state: bool = True,
     wait: bool = False,
 ) -> Reply:
@@ -110,6 +113,14 @@ async def handle_user_text(
             await state.emit(VoiceState(state="thinking"))
 
         checked = time.perf_counter()
+        identity = await state.people.identify_voice(channel, voice_pcm) if voice_pcm else NONE
+        if state.people.enabled:
+            reply = await state.people.intercept(channel, text)
+            if reply is not None:  # Vorstellung, Ja/Nein auf eine Frage oder "vergiss meine Stimme"
+                user.tooled = True
+                return await _say_directly(state, reply, on_delta, started, manage_voice_state)
+        state.current_speaker = state.people.speaker_for(channel)
+
         if state.learner.enabled:
             fast = await _try_learned(state, text, room)
             if fast is not None:
@@ -129,6 +140,12 @@ async def handle_user_text(
         parts: list[str] = []
         first_output: float | None = None
         answered = asyncio.Event()
+        greeting = state.people.greeting(channel, identity)
+        if greeting:
+            parts.append(greeting)
+            await state.emit(ChatDelta(id=assistant_id, delta=greeting))
+            if on_delta:
+                await on_delta(greeting)
         filler_task = (
             asyncio.create_task(_fillers(state, text, assistant_id, answered, on_filler))
             if state.fillers.enabled
@@ -144,6 +161,13 @@ async def handle_user_text(
                 await state.emit(ChatDelta(id=assistant_id, delta=delta))
                 if on_delta:
                     await on_delta(delta)
+            question = state.people.follow_up(channel, identity) if parts else None
+            if question:
+                extra = f"\n\n{question}" if not on_delta else f" {question}"
+                parts.append(extra)
+                await state.emit(ChatDelta(id=assistant_id, delta=extra))
+                if on_delta:
+                    await on_delta(extra)
         except Exception:
             log.exception("Antwort fehlgeschlagen")
             await state.emit(ErrorEvent(message="Die Antwort ist fehlgeschlagen. Details im Log."))
@@ -154,7 +178,10 @@ async def handle_user_text(
                 await asyncio.gather(filler_task, return_exceptions=True)
             assistant.text = "".join(parts)
             if state.settings.reflect and parts and not state.turn_tooled:
-                state.reflector.observe(text, None, state.devices.mentions_device(text))
+                who = state.current_speaker
+                state.reflector.observe(
+                    text, who.name if who else None, state.devices.mentions_device(text)
+                )
             assistant.tooled = user.tooled = state.turn_tooled
             log.info(
                 "Dialog: vorher %.2f s, Lernprüfung %.2f s, Antwort %.1f s (erste Ausgabe %s)",
@@ -172,6 +199,26 @@ async def handle_user_text(
         return Reply(assistant.text, first_output)
     finally:
         state.run_lock.release()
+
+
+async def _say_directly(
+    state: AppState,
+    text: str,
+    on_delta: OnDelta | None,
+    started: float,
+    manage_voice_state: bool,
+) -> Reply:
+    """Eine feste Antwort ohne Sprachmodell (Vorstellung, Rückfragen, Vergessen)."""
+    answer = ChatMessage(id=uuid.uuid4().hex, role="assistant", text=text, ts=_now(), tooled=True)
+    state.chat.append(answer)
+    state.memory.sessions.append("assistant", text)
+    await state.emit(answer)
+    await state.emit(ChatDone(id=answer.id))
+    if on_delta:
+        await on_delta(text)
+    if manage_voice_state:
+        await state.emit(VoiceState(state="idle"))
+    return Reply(text, time.perf_counter() - started, fastpath=True)
 
 
 async def _try_learned(state: AppState, text: str, room: str | None) -> str | None:

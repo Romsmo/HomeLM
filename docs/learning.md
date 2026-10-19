@@ -34,3 +34,13 @@ Das Widget **"Gelernt"** (links unten, verschiebbar) zeigt alles, was Cat sich g
 ## Sicherung gegen erfundene Erfolgsmeldungen
 
 Das kleine lokale Modell hat einmal "Okay, Deckenlicht Roman ist aus" geantwortet, **ohne** ein Werkzeug aufzurufen (am 17.10.2026 im Chat, "Mach es wieder aus": das Licht blieb an). Jetzt prüft der Agent jede Antwort, die eine Schaltung oder einen Gerätezustand behauptet ("ist aus", "ist jetzt an", "habe eingeschaltet", "erledigt"), gegen die Werkzeugaufrufe dieser Anfrage. Ohne Werkzeug wird die Antwort **nicht gezeigt**; das Modell bekommt den Hinweis, dass nichts passiert ist, und muss das Werkzeug aufrufen oder ehrlich sagen, dass es nicht ging. Gelingt auch das nicht, antwortet Cat: "Das habe ich nicht ausgeführt, weil ich dafür kein Gerät angesprochen habe." Außerdem weiß das Modell jetzt, welches Gerät zuletzt bedient wurde ("es" und "das Licht" lassen sich so auflösen), und bei Satelliten, in welchem Raum der Nutzer spricht.
+
+## Füllsätze (intents/fillers.py)
+
+Passend zur Anfrage wählt Cat eine von fünf Arten: **nachsehen** ("Welche Markisen sind offen?": "Warte kurz, ich schaue schnell nach."), **schalten** ("Mach das Licht an": "Mach ich, einen Moment."), **merken**, **nachdenken** (allgemeine Frage) und **Claude** (schwere Frage, dauert länger). Manche Sätze nennen das Stichwort der Anfrage ("Ich schaue kurz bei Markisen nach."). Die Wahl ist **keine Modellanfrage** (auch eine kurze kostet auf dieser CPU 3 bis 5 Sekunden und käme zu spät), sondern entsteht in Mikrosekunden aus den Wörtern der Anfrage: Frage oder Schaltbefehl, kommt ein Gerätewort vor, geht es an Claude.
+
+Die Liste **lernt dazu**:
+- **Sie wächst von selbst.** Ist Cat untätig (90 Sekunden keine Anfrage), lässt es das lokale Modell neue Sätze für die Art schreiben, die am meisten gebraucht wird und die wenigsten Sätze hat (höchstens 4 Läufe pro Tag, `CAT_FILLER_GENERATE`). Jeder neue Satz wird geprüft: 2 bis 9 Wörter, Satzzeichen am Ende, keine Zahlen, kein Markdown, nichts, was ein Ergebnis behauptet ("Das Licht ist aus."), nicht doppelt.
+- **Abwechslung:** Der am längsten nicht benutzte Satz kommt zuerst, nie zweimal derselbe hintereinander. Der Gebrauch wird gezählt.
+- **Löschen:** Im Widget "Gelernt", Reiter "Füllsätze", lässt sich jeder Satz löschen. Gelöschte Sätze kommen nicht wieder, auch nicht die Vorgaben.
+- Gespeichert in `data/fillers.json`.

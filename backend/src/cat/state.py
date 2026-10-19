@@ -15,8 +15,11 @@ from cat.devices.service import DeviceService
 from cat.files import Inbox
 from cat.intents.fillers import FillerBank
 from cat.intents.learned import Learner
+from cat.intents.text import has_control_cue, is_question
 from cat.memory.reflect import Fact, Reflector
 from cat.memory.service import MemoryService
+from cat.people.service import PeopleService
+from cat.people.store import PeopleStore, Person
 from cat.plugins.pending import PendingPlugins
 from cat.sandbox.client import SandboxClient
 from cat.satellites import SatelliteRegistry
@@ -72,6 +75,22 @@ class AppState:
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fillers = FillerBank(settings.fillers_file, settings.filler)
         self.reflector = Reflector(settings.reflect_idle_s)
+        self.current_speaker: Person | None = None  # wer in der laufenden Runde spricht
+        self.people = PeopleService(
+            PeopleStore(settings.people_file),
+            enabled=settings.people,
+            accept=settings.speaker_threshold,
+            uncertain=settings.speaker_uncertain,
+            margin=settings.speaker_margin,
+            ttl_s=settings.people_ttl_h * 3600,
+            ask_voice=settings.people_voice_ask,
+            ask_chat=settings.people_chat_ask,
+            is_request=lambda text: (
+                self.devices.mentions_device(text) or is_question(text) or has_control_cue(text)
+            ),
+            on_new=self._person_created,
+            on_forget=self._person_forgotten,
+        )
         self.last_activity = 0.0  # time.monotonic() der letzten Nutzeranfrage
         self.learner = Learner(
             settings.learned_file, self.devices, settings.learn_after, settings.learn
@@ -83,6 +102,29 @@ class AppState:
         """Vom Fallback-Anbieter aufgerufen, wenn das antwortende Modell wechselt."""
         self.provider_state = ProviderState(name=name, offline=offline)
         await self.emit(self.provider_state)
+
+    async def _person_created(self, person: Person) -> None:
+        """Profil-Notiz für eine neue Person (Fakten über sie bekommen ihren Namen als Tag)."""
+        day = time.strftime("%Y-%m-%d")
+        text = f"{person.name} gehört zum Haushalt (von Cat am {day} kennengelernt)."
+        await asyncio.to_thread(
+            self.memory.remember, person.name, text, "personen", ["person", person.name]
+        )
+
+    async def _person_forgotten(self, person: Person) -> None:
+        """Notizen über die Person löschen (Profil und mit ihrem Namen markierte Fakten)."""
+
+        def purge() -> None:
+            for note in self.memory.store.all():
+                if (
+                    note.topic == "personen"
+                    and note.title == person.name
+                    or person.name in note.tags
+                ):
+                    self.memory.store.delete(note.path)
+            self.memory.index.sync()
+
+        await asyncio.to_thread(purge)
 
     def export_learned(self) -> None:
         """Gelernte Kurzbefehle als Notiz ins Gedächtnis (für Obsidian und Claude lesbar)."""

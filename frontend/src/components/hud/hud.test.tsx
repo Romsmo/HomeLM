@@ -1,10 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { MicControl } from "../../hooks/useVoice";
 import type { ChatItem } from "../../state/store";
+import type { Brain } from "../../hooks/useBrain";
 import Caption from "./Caption";
 import CatCore from "./CatCore";
 import ChatOverlay from "./ChatOverlay";
 import { Ring } from "./Hud";
+import LearnedPanel from "./LearnedPanel";
 
 const mic = (over: Partial<MicControl> = {}): MicControl => ({
   state: "off",
@@ -121,5 +123,69 @@ describe("ChatOverlay", () => {
     render(<ChatOverlay onClose={onClose} {...props} />);
     fireEvent.mouseDown(screen.getByLabelText("Nachricht an Cat"));
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("LearnedPanel mit Gedächtnis", () => {
+  const brain = (over: Partial<Brain> = {}): Brain => ({
+    notes: [
+      { path: "vorlieben/kaffee.md", topic: "vorlieben", title: "Kaffee", date: "2026-10-19", tags: ["auto"], text: "Der Nutzer trinkt Kaffee." },
+    ],
+    people: {
+      enabled: true,
+      voiceAvailable: true,
+      people: [{ id: "p1", name: "Roman", created: 1, last_seen: null, voice: true, samples: 3 }],
+    },
+    fillers: [{ text: "Moment, ich schaue kurz nach.", category: "lookup", source: "generated", uses: 2, last_used: null }],
+    error: null,
+    removeNote: vi.fn(),
+    removeVoice: vi.fn(),
+    removePerson: vi.fn(),
+    removeFiller: vi.fn(),
+    ...over,
+  });
+  const panel = (b: Brain) => (
+    <LearnedPanel rows={[]} error={null} needed={2} onForget={() => {}} onForgetAll={() => {}} brain={b} />
+  );
+
+  it("wechselt zwischen Notizen, Personen und Füllsätzen", () => {
+    render(panel(brain()));
+    fireEvent.click(screen.getByRole("tab", { name: "Notizen" }));
+    expect(screen.getByText("Kaffee")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Personen" }));
+    expect(screen.getByText("Roman")).toBeInTheDocument();
+    expect(screen.getByText(/Stimme gespeichert \(3\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Füllsätze" }));
+    expect(screen.getByText("Moment, ich schaue kurz nach.")).toBeInTheDocument();
+    expect(screen.getByText(/dazugelernt/)).toBeInTheDocument();
+  });
+
+  it("löscht erst nach einer zweiten Bestätigung", () => {
+    const b = brain();
+    render(panel(b));
+    fireEvent.click(screen.getByRole("tab", { name: "Notizen" }));
+    const button = screen.getByRole("button", { name: "Notiz „Kaffee“ vergessen" });
+    fireEvent.click(button);
+    expect(b.removeNote).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Notiz „Kaffee“ wirklich vergessen" }));
+    expect(b.removeNote).toHaveBeenCalledWith("vorlieben/kaffee.md");
+  });
+
+  it("vergisst nur die Stimme oder die ganze Person", () => {
+    const b = brain();
+    render(panel(b));
+    fireEvent.click(screen.getByRole("tab", { name: "Personen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stimme von Roman vergessen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stimme von Roman wirklich vergessen" }));
+    expect(b.removeVoice).toHaveBeenCalledWith("p1");
+    expect(b.removePerson).not.toHaveBeenCalled();
+  });
+
+  it("sagt, wenn noch nichts da ist", () => {
+    render(panel(brain({ notes: [], fillers: [], people: { enabled: true, voiceAvailable: false, people: [] } })));
+    fireEvent.click(screen.getByRole("tab", { name: "Notizen" }));
+    expect(screen.getByText(/Noch keine Notizen/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Personen" }));
+    expect(screen.getByText(/Ich kenne noch niemanden/)).toBeInTheDocument();
   });
 });

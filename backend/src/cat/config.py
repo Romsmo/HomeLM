@@ -108,9 +108,22 @@ class Settings(BaseSettings):
     filler_generate: bool = True  # neue Sätze von selbst dazulernen (nur wenn Cat untätig ist)
     # Second Brain (memory/): dauerhafte Fakten aus Gesprächen selbst merken (nur wenn Cat untätig
     # ist) und Antworten von Claude auf zeitlose Fragen als Wissen ablegen.
+    # Personen (people/): kennenlernen, an der Stimme oder durch Fragen erkennen, personalisieren.
+    people: bool = True
+    people_voice_ask: bool = True  # bei unbekannter Stimme nach dem Namen fragen
+    people_chat_ask: bool = True  # im Chat nach dem Namen fragen, wenn niemand bekannt ist
+    people_ttl_h: float = 6.0  # so lange gilt ein im Chat genannter Name
+    speaker: bool = True  # Stimmerkennung (Modell wird einmal heruntergeladen, 29 MB)
+    speaker_threshold: float = 0.60  # Cosinus ab dem eine Stimme als erkannt gilt
+    speaker_uncertain: float = 0.45  # darunter unbekannt, dazwischen fragt Cat nach
+    speaker_margin: float = 0.08  # Abstand zur zweitähnlichsten Person
     reflect: bool = True
     reflect_idle_s: float = 60.0
     knowledge_cache: bool = True
+
+    @property
+    def people_file(self) -> Path:
+        return self.data_dir / "people.json"
 
     @property
     def fillers_file(self) -> Path:

@@ -117,6 +117,8 @@ async def voice_endpoint(ws: WebSocket) -> None:
             spoken=True,
             on_delta=on_delta,
             on_filler=lambda text: session.say_filler(text),
+            channel=session.channel,
+            voice_pcm=session.last_pcm,
             manage_voice_state=False,
             wait=True,  # mehrere Satelliten: nacheinander statt "bitte warten"
         )
@@ -144,6 +146,8 @@ async def voice_endpoint(ws: WebSocket) -> None:
     if satellite:
         state.satellites.mark_connected(satellite)
         log.info("Satellit %s (Raum %s) verbunden", satellite.id, satellite.room)
+    if getattr(engine, "speaker", None) is not None:
+        state.people.encoder = engine.speaker
     await send_json({"type": "voice.ready", "stt": state.settings.stt_model})
     try:
         while True:
@@ -162,6 +166,7 @@ async def voice_endpoint(ws: WebSocket) -> None:
         pass
     finally:
         await session.close()
+        state.people.drop_channel(session.channel)
         if satellite:
             state.satellites.mark_disconnected(satellite)
             log.info("Satellit %s getrennt", satellite.id)

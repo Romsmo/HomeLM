@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -77,6 +78,7 @@ class VoiceEngine:
         self.lock = asyncio.Lock()
         self.ready = False
         self.error: str | None = None
+        self.speaker: Any = None  # SpeakerEncoder, wenn die Stimmerkennung geladen ist
 
     def new_segmenter(self) -> Segmenter:
         return Segmenter(self._vad_factory(), self.vad_config)
@@ -109,6 +111,8 @@ class VoiceSession:
         # wird eine Äußerung verworfen.
         self._wake = wake
         self._sentences: asyncio.Queue[str | None] | None = None
+        self.last_pcm: bytes | None = None  # die Äußerung, für die Stimmerkennung
+        self.channel = f"voice:{uuid.uuid4().hex[:8]}"
         self._window = WakeWindow(wake.followup_s) if wake else None
 
     async def _state(self, name: str) -> None:
@@ -162,6 +166,7 @@ class VoiceSession:
                         await self._open_window()
                         return
                 await self._send_json({"type": "voice.transcript", "text": text})
+                self.last_pcm = pcm
                 await self._answer(text, latency, since)
                 await self._open_window()
         except Exception:

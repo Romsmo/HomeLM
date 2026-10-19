@@ -35,10 +35,15 @@ class MemoryService:
     def search(self, query: str, limit: int = 5, topic: str | None = None) -> list[Hit]:
         return self.index.search(query, limit, topic)
 
-    def context_for(self, user_text: str) -> str:
-        """Relevante Erinnerungen als Text für den Systemprompt (leer, wenn nichts passt)."""
+    def context_for(self, user_text: str, person: str | None = None) -> str:
+        """Relevante Erinnerungen als Text für den Systemprompt (leer, wenn nichts passt).
+        Mit `person` kommen deren Notizen zuerst (Profil und mit ihrem Namen markierte Fakten)."""
         try:
             hits = self.index.search(user_text, CONTEXT_HITS)
+            if person:
+                own = [h for h in self.index.search(person, 3) if person in h.note.tags]
+                seen = {h.note.path for h in own}
+                hits = [*own[:2], *[h for h in hits if h.note.path not in seen]][: CONTEXT_HITS + 1]
         except Exception:
             log.exception("Gedächtnissuche fehlgeschlagen")
             return ""

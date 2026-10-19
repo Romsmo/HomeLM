@@ -45,3 +45,17 @@ Gemessen auf dem Heimserver (i5-8500T, 6 Kerne, Rechenthreads mit `nice 10`, 3 T
 ## Datenschutz
 
 Audio wird nicht gespeichert, nur der erkannte Text landet wie jede Chatnachricht im Verlauf. Die Spracherkennung läuft vollständig lokal.
+
+## Aktivierungsphrasen (Browser-Mikrofon)
+
+Das Browser-Mikrofon ist immer an. Damit Cat nicht auf jedes Gespräch im Raum antwortet, gilt eine Äußerung nur, wenn sie mit einer **Aktivierungsphrase** beginnt oder endet: **"Hey Cat"**, **"Hallo Cat"** oder **"Okay Cat"** ("Hey Cat, mach das Licht an", "Wie spät ist es, Hey Cat"). Sagt jemand nur die Phrase, antwortet Cat kurz ("Ja?", "Ich höre.", "Ja, bitte?"). Nach einer Antwort bleibt ein **Gesprächsfenster** (20 Sekunden) offen: Die nächste Äußerung, z. B. die Antwort auf eine Rückfrage, braucht keine Phrase.
+
+- Die Phrase wird im erkannten **Text** gesucht. Whisper schreibt "Cat" oft anders ("Kat", "Kät", "Katt"): Das gilt auch. Dazu steht "Hey Cat. Hallo Cat. Okay Cat." im Hinweistext für Whisper.
+- Was ohne Phrase gesprochen wird, geht an **kein** Sprachmodell, wird nicht gespeichert und nicht angezeigt (das Gerät schickt es zwar zum Server, dort wird es nach der Texterkennung verworfen). Auch der Stimm-Fingerabdruck wird dafür nicht berechnet.
+- Satelliten (Pi) wecken über ihr eigenes Wake-Word und brauchen die Phrase nicht.
+- Einstellungen: `CAT_WAKE_REQUIRED` (Standard `true`), `CAT_WAKE_PHRASES` (kommagetrennt, Standard `hey cat,hallo cat,okay cat`), `CAT_WAKE_FOLLOWUP_S` (20). Die Oberfläche zeigt "Sag „Hey Cat“ und deine Anfrage" bzw. "Ich höre weiter zu".
+- Grenzen: Erkennt Whisper "Cat" gar nicht (z. B. "Katze"), wird die Äußerung verworfen. Dann klappt es mit einer klareren Aussprache oder einer weiteren Phrase in `CAT_WAKE_PHRASES`.
+
+## Füllsätze beim Nachdenken
+
+Das lokale Modell braucht 4 bis 15 Sekunden. Damit Cat in dieser Zeit nicht tot wirkt, sagt es nach `CAT_FILLER_DELAY_S` (1 Sekunde) etwas Passendes, z. B. "Moment, ich schaue kurz nach." oder "Mach ich, einen Moment." und bei sehr langer Wartezeit bis zu zweimal einen weiteren Satz (alle `CAT_FILLER_REPEAT_S`, 9 Sekunden). Sehr schnelle Antworten (gelernte Kurzbefehle) bekommen keinen. Der Satz wird gesprochen und im Chat/unter dem Kern angezeigt, gehört aber nicht zur Antwort und steht nicht im Verlauf. Details und Lernen: `docs/learning.md`.

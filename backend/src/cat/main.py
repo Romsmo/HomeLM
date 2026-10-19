@@ -7,7 +7,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from cat import __version__, api_files, api_fillers, api_learned, api_memory, auth
+from cat import (
+    __version__,
+    api_files,
+    api_fillers,
+    api_learned,
+    api_memory,
+    api_people,
+    auth,
+)
 from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
 from cat.intents.fillers import FillerWorkshop
@@ -103,7 +111,14 @@ def _start_voice(state: AppState) -> "asyncio.Task[None] | None":
     """Lädt die Sprachmodelle im Hintergrund (Cat ist sofort erreichbar, Sprache folgt)."""
     if not state.settings.voice or state.voice is None:
         return None
-    return asyncio.create_task(load_engine(state.voice, state.settings))
+
+    async def start() -> None:
+        assert state.voice is not None
+        await load_engine(state.voice, state.settings)
+        if getattr(state.voice, "speaker", None) is not None:
+            state.people.encoder = state.voice.speaker
+
+    return asyncio.create_task(start())
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -166,6 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_learned.router)
     app.include_router(api_fillers.router)
     app.include_router(api_memory.router)
+    app.include_router(api_people.router)
     app.include_router(endpoint.router)
     app.include_router(voice_ws.router)
 

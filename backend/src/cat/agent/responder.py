@@ -56,7 +56,12 @@ class AgentResponder:
         ctx.device_related = self._state.devices.mentions_device(question)
         context = [(m.role, m.text) for m in history[:-1]][-4:]
         # Relevante Erinnerungen vor der Antwort in den Prompt holen (FTS5, lokal, ohne LLM).
-        extra = await asyncio.to_thread(self._state.memory.context_for, question)
+        speaker = self._state.current_speaker
+        extra = await asyncio.to_thread(
+            self._state.memory.context_for, question, speaker.name if speaker else None
+        )
+        if speaker:
+            extra = f"{self._state.people.context_line(speaker)}\n\n{extra}".strip()
         if room:
             extra = f"{room_hint(room)}\n\n{extra}".strip()
         if spoken:

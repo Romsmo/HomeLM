@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useCat } from "../hooks/useCat";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { useFiles } from "../hooks/useFiles";
+import { useBrain } from "../hooks/useBrain";
 import { useLearned } from "../hooks/useLearned";
 import { useLayout } from "../hooks/useLayout";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -46,6 +47,7 @@ export default function Dashboard({
   const layout = useLayout();
   const files = useFiles(connected);
   const learned = useLearned(connected, state.messages.length);
+  const brain = useBrain(connected, state.messages.length);
   const dragging = useFileDrop(files.upload);
   const canvas = useRef<HTMLDivElement>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -118,6 +120,7 @@ export default function Dashboard({
         needed={2}
         onForget={learned.forget}
         onForgetAll={learned.forgetAll}
+        brain={brain}
       />
     ),
     core: (

@@ -24,3 +24,13 @@ Das Gedächtnis liegt **außerhalb des Modells**: Ein Wechsel von Anbieter oder 
 ## Datenschutz und Sicherung
 
 Notizen und Verläufe liegen unverschlüsselt in `/srv/homelm/data`. Sie gehören in die tägliche Sicherung von `data/` (siehe `docs/cat-plan.md`, Abschnitt 8). Einzelne Erinnerungen löschen Sie, indem Sie die Datei löschen.
+
+## Second Brain überall (Phase 20)
+
+Das Gedächtnis ist nicht mehr nur ein Werkzeug, das der Agent auf Zuruf benutzt, sondern in allen Pfaden eingebunden:
+
+- **Vor jeder Antwort** (lokal, über Claude, per Sprache, Satellit) sucht Cat passende Notizen und gibt sie dem Modell mit. Kennt Cat den Sprecher, kommen **dessen Notizen zuerst** (Profil und mit seinem Namen markierte Fakten).
+- **Wissens-Cache:** Antwortet Claude auf eine allgemeine, zeitlose Frage ("Wer hat Faust geschrieben?"), wird die Antwort als Notiz im Thema `wissen` abgelegt (Frage, Antwort, Datum). Dieselbe Frage später beantwortet Cat **sofort aus dem Gedächtnis**, ohne Claude und ohne Abo-Kontingent, mit dem Hinweis "Aus dem Gedächtnis (Antwort von Claude vom ...)" und "Sag „frag Claude nochmal“ für eine frische Antwort". Nicht gespeichert wird, was sich ändert oder persönlich ist (Wetter, Uhrzeit, Nachrichten, Preise, "heute", "aktuell", Fragen über den Nutzer, Geräte, Grafiken). Antworten älter als 180 Tage gelten nicht mehr als fertige Antwort. Abschaltbar: `CAT_KNOWLEDGE_CACHE=false`.
+- **Selbst merken (`memory/reflect.py`):** Sagt jemand "Ich trinke morgens Kaffee mit Hafermilch" oder "Meine Tochter heißt Lena", klingt das nach einem dauerhaften Fakt. Ein billiger Wortfilter merkt sich solche Äußerungen (keine Fragen, keine Gerätebefehle). Ist Cat 60 Sekunden untätig, fragt es das lokale Modell einmal, welche dauerhaften Fakten darin stehen (JSON), prüft jeden (dritte Person, kurz, keine Geheimnisse) und legt Notizen an (Tag `auto`, dazu der Name des Sprechers). Cat sagt im Chat, was es sich gemerkt hat. Abschaltbar: `CAT_REFLECT=false`.
+- **Vergessen:** "Vergiss, dass ich ..." ruft `memory_forget` (löscht, wenn genau eine Notiz passt, sonst fragt Cat nach). Im Widget "Gelernt", Reiter "Notizen", lässt sich jede Notiz löschen (`GET`/`DELETE /api/memory`).
+- **Kurzbefehle als Notiz:** Was Cat aus Wiederholungen gelernt hat, steht auch als Notiz `gelerntes/kurzbefehle.md` im Gedächtnis (für Obsidian und Claude lesbar).

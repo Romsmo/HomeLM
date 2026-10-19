@@ -135,7 +135,10 @@ class RoutedResponder:
 
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         ctx.device_related = self._state.devices.mentions_device(question)
-        memory = await asyncio.to_thread(self._state.memory.context_for, question)
+        speaker = self._state.current_speaker
+        memory = await asyncio.to_thread(
+            self._state.memory.context_for, question, speaker.name if speaker else None
+        )
         hint = self._state.devices.last_device_hint()
         extra = "\n\n".join(
             p
@@ -143,6 +146,7 @@ class RoutedResponder:
                 build_context(),
                 room_hint(room) if room else "",
                 hint,
+                self._state.people.context_line(speaker),
                 memory,
                 SPOKEN_HINT if spoken else "",
             )
@@ -231,7 +235,12 @@ class RoutedResponder:
                         "Sag „frag Claude nochmal“ für eine frische Antwort.*"
                     )
                 return
-        memory = await asyncio.to_thread(self._state.memory.context_for, question)
+        who = self._state.current_speaker
+        memory = await asyncio.to_thread(
+            self._state.memory.context_for, question, who.name if who else None
+        )
+        if who:
+            memory = f"{self._state.people.context_line(who)}\n\n{memory}".strip()
         # Das lokale Modell darf die Frage präzisieren; bei Ausfall steht dort nur der Fehlertext.
         note = escalation.question if escalation.reason == "model" else ""
         files = await asyncio.to_thread(self._file_note)
