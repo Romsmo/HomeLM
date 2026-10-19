@@ -134,6 +134,7 @@ class Agent:
                 yield event.text
 
             model_s = time.perf_counter() - model_started
+            raw_out = "".join(step_text)
             if not calls and (typed := _typed_calls("".join(step_text), self._registry)):
                 # Kurzzeile ("S|Licht Büro|off") oder als Text geschriebener Aufruf
                 # ("get_state(device=...)"): ausführen.
@@ -184,10 +185,11 @@ class Agent:
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             fresh = ctx.final_replies[ready:]
             log.info(
-                "Zug: Modell %.1f s, Werkzeuge %.1f s (%s)",
+                "Zug: Modell %.1f s, Werkzeuge %.1f s (%s) Ausgabe %.60r",
                 model_s,
                 time.perf_counter() - tools_started,
                 ", ".join(c.name for c in calls),
+                raw_out,
             )
             decided = all(c.name == "set_state" or not command for c in calls)
             if ok_count == len(calls) and len(fresh) == len(calls) and decided:
