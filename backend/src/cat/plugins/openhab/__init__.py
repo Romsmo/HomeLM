@@ -23,11 +23,18 @@ from urllib.parse import quote
 
 import httpx
 
+from cat.agent.tools import Tool, ToolContext, ToolError
 from cat.devices.commands import DeviceError
 from cat.devices.discovery import discover_openhab
 from cat.devices.models import DeviceSpec
 from cat.devices.service import DeviceService, RawState
 from cat.plugins.base import BasePlugin, PluginContext
+from cat.plugins.openhab.automations import (
+    describe,
+    filter_by_query,
+    normalize_state,
+    parse_rules,
+)
 
 log = logging.getLogger("cat.plugins.openhab")
 
@@ -149,27 +156,100 @@ class OpenHabPlugin(BasePlugin):
         if resp.status_code != 200:
             raise DeviceError(f"openHAB antwortet mit Fehler {resp.status_code}.")
         try:
-            return parse_state(resp.json().get("state"))
+            raw = parse_state(resp.json().get("state"))
         except (ValueError, AttributeError) as exc:
             raise DeviceError("Unerwartete Antwort von openHAB.") from exc
+        if raw.state is None:  # Zwilling mit Wert fragen
+            for twin in spec.twins:
+                try:
+                    other = await self._client.get(
+                        f"/rest/items/{quote(twin, safe='')}", params={"metadata": "none"}
+                    )
+                    found = (
+                        parse_state(other.json().get("state")) if other.status_code == 200 else raw
+                    )
+                except (httpx.HTTPError, ValueError, AttributeError):
+                    continue
+                if found.state is not None:
+                    return found
+        return raw
 
     async def send(self, spec: DeviceSpec, command: str) -> None:
         assert self._client is not None
         payload = translate_command(spec, command)
+        failure: DeviceError | None = None
+        sent = 0
+        for item in (*spec.twins, spec.item):
+            try:
+                await self._post(item, payload)
+                sent += 1
+            except DeviceError as exc:
+                failure = exc
+        if sent == 0 and failure is not None:
+            raise failure
+
+    async def _post(self, item: str, payload: str) -> None:
+        assert self._client is not None
         try:
             resp = await self._client.post(
-                f"/rest/items/{quote(spec.item, safe='')}",
+                f"/rest/items/{quote(item, safe='')}",
                 content=payload.encode(),
                 headers={"Content-Type": "text/plain"},
             )
         except httpx.HTTPError as exc:
             raise DeviceError("openHAB ist nicht erreichbar, nichts gesendet.") from exc
         if resp.status_code == 404:
-            raise DeviceError(f"Das Item '{spec.item}' gibt es in openHAB nicht.")
+            raise DeviceError(f"Das Item '{item}' gibt es in openHAB nicht.")
         if resp.status_code in (401, 403):
             raise DeviceError("openHAB verweigert den Zugriff (API-Token prüfen).")
         if resp.status_code >= 400:
             raise DeviceError(f"openHAB hat den Befehl abgelehnt (Fehler {resp.status_code}).")
+
+    async def rules(self) -> list[Any]:
+        """Alle Regeln (nur lesen)."""
+        assert self._client is not None
+        try:
+            resp = await self._client.get("/rest/rules", params={"summary": "true"})
+        except httpx.HTTPError as exc:
+            raise ToolError("openHAB ist nicht erreichbar.") from exc
+        if resp.status_code != 200:
+            raise ToolError(f"openHAB liefert die Automationen nicht (Fehler {resp.status_code}).")
+        try:
+            return list(resp.json())
+        except (ValueError, TypeError) as exc:
+            raise ToolError("Unerwartete Antwort von openHAB.") from exc
+
+    def tools(self) -> list[Tool]:
+        async def list_automations(args: dict[str, Any], ctx: ToolContext) -> str:
+            query = args.get("query")
+            query = query.strip() if isinstance(query, str) else ""
+            state = normalize_state(args.get("state"))
+            items = filter_by_query(parse_rules(await self.rules()), query)
+            text = describe(items, state, query)
+            ctx.final_replies.append(text)
+            return text
+
+        return [
+            Tool(
+                name="list_automations",
+                description=(
+                    "Listet die Automationen (openHAB-Regeln) mit Status aktiv oder deaktiviert. "
+                    "Nur lesen."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Stichwort (optional)."},
+                        "state": {
+                            "type": "string",
+                            "enum": ["aktiv", "aus"],
+                            "description": "Nur aktive oder nur deaktivierte (optional).",
+                        },
+                    },
+                },
+                handler=list_automations,
+            )
+        ]
 
     async def discover(self) -> int:
         """Liest alle Items auf einmal und macht daraus Geräte (devices/discovery.py).

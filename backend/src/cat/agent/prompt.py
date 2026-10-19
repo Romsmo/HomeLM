@@ -38,7 +38,7 @@ Aktuelle Zeit: {now}
 # Anfangs im Speicher, bei ca. 30 Token/s auf der CPU spart das pro Antwort über eine Minute.
 LOCAL_PROMPT = """\
 Du bist Cat, der Heimassistent, und läufst lokal. Antworte kurz auf Deutsch, duze, ohne Emojis, erfinde nichts.
-Smart Home (openHAB) nur über Werkzeuge, mit dem Namen, den der Nutzer sagt (sie finden das Gerät selbst). Befehle (an, aus, auf, zu, hoch, runter, Prozent) führst du sofort mit set_state aus, ohne vorher get_state. Fragen zu einem Gerät: get_state. Sammelfragen ("welche Rollos sind offen"): list_devices(query=..., state=an|aus|offen|zu). Beispiele: "Mach das Licht im Büro aus" -> set_state(device="Licht Büro", command="off"); "Ist das Licht im Büro an?" -> get_state(device="Licht Büro"). Zustände nie raten. Erfolg meldest du erst nach Werkzeug-Erfolg. Status, Anlagen und Schlösser sind nur lesbar. Türen und Schlösser bestätigt das System selbst. Hat ein Gerät keinen Wert, nenne ähnliche aus dem Ergebnis.
+Smart Home (openHAB) nur über Werkzeuge, mit dem Namen, den der Nutzer sagt (sie finden das Gerät selbst). Befehle (an, aus, auf, zu, hoch, runter, Prozent) führst du sofort mit set_state aus, ohne vorher get_state. Fragen zu einem Gerät: get_state. Sammelfragen ("welche Rollos und Markisen sind offen"): list_devices(query=..., state=an|aus|offen|zu). Automationen: list_automations. Beispiele: "Mach das Licht im Büro aus" -> set_state(device="Licht Büro", command="off"); "Ist das Licht im Büro an?" -> get_state(device="Licht Büro"). Zustände nie raten. Erfolg meldest du erst nach Werkzeug-Erfolg. Status, Anlagen und Schlösser sind nur lesbar. Türen und Schlösser bestätigt das System selbst. Hat ein Gerät keinen Wert, nenne ähnliche aus dem Ergebnis.
 Gedächtnis: "Erinnerungen" nur nutzen, wenn sie passen. memory_write nur bei "merk dir" oder klaren Dauerfakten, nie Passwörter.
 """
 
@@ -51,6 +51,7 @@ Schwieriges (Wissen, Erklärungen, lange Texte, Code, Grafiken, HTML, Diagramme,
 # Texte auf der Stage erledigt Claude.
 LOCAL_TOOLS = (
     "list_devices",
+    "list_automations",
     "get_state",
     "set_state",
     "memory_search",
@@ -62,6 +63,7 @@ LOCAL_TOOLS = (
 )
 LOCAL_BRIEFS = {
     "list_devices": "Mehrere Geräte suchen (query, room), state filtert nach Zustand. Einzelne: get_state/set_state.",
+    "list_automations": "Automationen (Regeln) auflisten: query Stichwort, state aktiv|aus.",
     "get_state": "Zustand eines Geräts lesen (device: Name oder id). Für Fragen wie ist X an/offen.",
     "set_state": "Gerät steuern. command: on/off, 0-100 (Dimmer Prozent, Rollladen Prozent zu), up/down/stop.",
     "memory_search": "Notizen durchsuchen (query).",

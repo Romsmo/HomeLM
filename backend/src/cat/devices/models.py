@@ -47,6 +47,9 @@ class DeviceSpec(BaseModel):
     synonyms: list[str] = Field(default_factory=list, max_length=20)
     # False: technisches Gerät, nur auf Nachfrage (Suche, get_state), nicht in Listen und Dashboard.
     listed: bool = True
+    # Zwillings-Items derselben Hardware (openHAB legt für ein Gerät oft zwei Items an, eines mit
+    # Wert und eines ohne): Befehle gehen an beide, den Zustand liefert das mit Wert.
+    twins: list[str] = Field(default_factory=list, max_length=5)
     # Überschreibt die Standardübersetzung der Befehle ("unlock": "OFF").
     command_map: dict[str, str] = Field(default_factory=dict)
 

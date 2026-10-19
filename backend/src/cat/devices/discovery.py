@@ -39,6 +39,8 @@ DEFAULT_UNLISTED = [
 LISTED_PROPERTIES = {"Temperature", "Humidity", "Pressure", "Power", "Energy", "Co2", "Rain"}
 SKIPPED_TYPES = {"Group", "Image", "Player", "Location"}
 _ROOM_FALLBACK = "Haus"
+_NULL_STATES = {"NULL", "UNDEF", ""}
+_TWINNABLE: set[DeviceType] = {"shutter", "dimmer", "switch", "light"}
 
 
 class DiscoverConfig(BaseModel):
@@ -215,4 +217,51 @@ def discover_openhab(
                 state=None if item.get("state") is None else str(item["state"]),
             )
         )
+    return _link_twins(out)
+
+
+def _tokens(item: str) -> list[str]:
+    return [t for t in item.lower().split("_") if t]
+
+
+def _is_subsequence(short: list[str], long: list[str]) -> bool:
+    it = iter(long)
+    return all(token in it for token in short)
+
+
+def _link_twins(found: list[Discovered]) -> list[Discovered]:
+    """Zwillings-Items verbinden: "Rollo_Roman_Romans_Zimmer__Control" (Etikett "Romans Rollo",
+    kein Wert) und "Rollo_Roman_Control" (Wert, Technik-Name) sind in openHAB zwei Items für ein
+    Gerät. Das Item ohne Wert bekommt das mit Wert als Zwilling: Befehle gehen an beide, der
+    Zustand kommt vom Zwilling, und in Listen steht nur das mit dem schönen Namen."""
+    valued = [d for d in found if d.state is not None and d.state.upper() not in _NULL_STATES]
+    twins_of: dict[str, list[Discovered]] = {}
+    for d in found:
+        if d.state is not None and d.state.upper() not in _NULL_STATES:
+            continue
+        if d.spec.type not in _TWINNABLE:
+            continue
+        mine = _tokens(d.spec.item)
+        matches = [
+            v
+            for v in valued
+            if v.spec.type == d.spec.type
+            and len(_tokens(v.spec.item)) < len(mine)
+            and _is_subsequence(_tokens(v.spec.item), mine)
+        ]
+        if matches:
+            twins_of[d.spec.item] = matches[:3]
+    if not twins_of:
+        return found
+    hidden = {m.spec.item for ms in twins_of.values() for m in ms}
+    out: list[Discovered] = []
+    for d in found:
+        ms = twins_of.get(d.spec.item)
+        if ms:
+            spec = d.spec.model_copy(update={"twins": [m.spec.item for m in ms], "listed": True})
+            out.append(Discovered(spec=spec, state=ms[0].state))
+        elif d.spec.item in hidden and d.spec.listed:
+            out.append(Discovered(spec=d.spec.model_copy(update={"listed": False}), state=d.state))
+        else:
+            out.append(d)
     return out

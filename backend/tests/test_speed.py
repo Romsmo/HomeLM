@@ -394,3 +394,13 @@ def test_defaults_favour_speed() -> None:
 @pytest.mark.parametrize("name", LOCAL_TOOLS)
 def test_every_local_tool_has_a_brief(name: str) -> None:
     assert name in LOCAL_BRIEFS and len(LOCAL_BRIEFS[name]) < 130
+
+
+async def test_shutter_words_cover_rollos_and_markises_together(tmp_path: Path) -> None:
+    service, _ = make(tmp_path)
+    service.seed_states("openhab", {"RO2": RawState("0")})
+    provider = FakeProvider(
+        [ToolCall("c1", "list_devices", {"query": "Rollos und Markisen", "state": "offen"})]
+    )
+    out, _ = await run(agent_for(service, provider), "Welche Rollos und Markisen sind offen?")
+    assert out == "Offen sind: Rollo Roman Control (Romans Zimmer)."

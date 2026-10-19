@@ -375,6 +375,7 @@ async def test_plugin_discovers_with_one_get_and_changes_nothing_in_openhab(tmp_
     assert all(r.headers["content-type"] == "text/plain" for r in posts)
     assert {r.url.path for r in posts} == {
         "/rest/items/Rollo_Roman_Romans_Zimmer__Control",
+        "/rest/items/Rollo_Roman_Control",  # Zwilling mit Wert: bekommt den Befehl ebenfalls
         "/rest/items/Romans_Shelly_Betrieb",
     }
     await client.aclose()
@@ -443,3 +444,20 @@ async def test_unknown_state_points_to_similar_devices_with_a_value(tmp_path: Pa
     assert "Garagentor" not in out and "Küchenrollo" not in out  # nur Ähnliches im selben Raum
     known = await tool.handler({"device": "Rollo Roman Control"}, ctx)
     assert "Hinweis" not in known
+
+
+def test_twin_items_share_state_and_only_the_nice_name_is_listed() -> None:
+    d = found()
+    nice = d["Rollo_Roman_Romans_Zimmer__Control"]
+    assert nice.spec.twins == ["Rollo_Roman_Control"] and nice.state == "0"  # Wert vom Zwilling
+    assert d["Rollo_Roman_Control"].spec.listed is False and nice.spec.listed
+
+
+def test_lamps_with_similar_names_are_not_mistaken_for_twins() -> None:
+    items = [
+        item("Hue_Lampe_Terrasse_Helligkeit", "Dimmer", "Terrasse", [], ["Point"], "50"),
+        item("Hue_Lampe_Wohnzimmer_Helligkeit", "Dimmer", "Wohnzimmer", [], ["Point"], "NULL"),
+    ]
+    out = {d.spec.item: d for d in discover_openhab(items, DiscoverConfig(enabled=True))}
+    assert out["Hue_Lampe_Wohnzimmer_Helligkeit"].spec.twins == []
+    assert out["Hue_Lampe_Terrasse_Helligkeit"].spec.listed

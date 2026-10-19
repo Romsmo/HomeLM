@@ -86,6 +86,8 @@ class DeviceService:
         index: dict[tuple[str, str], list[DeviceSpec]] = {}
         for spec in merged:
             index.setdefault((spec.backend, spec.item), []).append(spec)
+            for twin in spec.twins:
+                index.setdefault((spec.backend, twin), []).append(spec)
         self._by_item = index
         stems: set[str] = set()
         for spec in merged:
@@ -107,9 +109,16 @@ class DeviceService:
     def seed_states(self, backend: str, states: dict[str, RawState]) -> None:
         """Zustände aus einer Sammelabfrage übernehmen (Item -> Zustand), ohne Einzelabfragen."""
         for spec in self._all:
-            if spec.backend == backend and spec.item in states:
-                self._states[spec.id] = states[spec.item]
-                self._offline.discard(spec.id)
+            if spec.backend != backend or spec.item not in states:
+                continue
+            raw = states[spec.item]
+            if raw.state is None:  # Zwilling mit Wert nehmen
+                raw = next(
+                    (states[t] for t in spec.twins if t in states and states[t].state is not None),
+                    raw,
+                )
+            self._states[spec.id] = raw
+            self._offline.discard(spec.id)
 
     def discover_config(self, backend: str) -> DiscoverConfig | None:
         """Einstellungen der automatischen Erkennung, falls eingeschaltet."""
