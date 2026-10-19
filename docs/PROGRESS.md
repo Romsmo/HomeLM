@@ -498,6 +498,14 @@ Auftrag des Nutzers: nochmals prüfen, was sich beschleunigen lässt. Gemessen w
 
 Im Sprachweg kommen Pause (1,1 s) und Spracherkennung (ca. 2,1 s) dazu, bevor das Modell anfängt; das erste Audio ist durch den Füllsatz nach ca. 3 bis 4 s da.
 
+**Nachtrag Phase 22: Prompt-Verarbeitung war der Rest** (`Ollama:`-Zeile im Log zeigt jetzt Prompt-Token und Zeit je Anfrage). Bei den noch langsamen Anfragen (7 bis 12 s) war die Ausgabe nur 1 bis 1,5 s lang, den Rest kostete die **Verarbeitung des Prompts**: 130 bis 500 Token pro Sekunde auf dieser CPU, und jede Anfrage brachte 300 bis 600 neue Token mit (Uhrzeit, gefundene Notizen, bis zu 30 Nachrichten Verlauf mit langen Claude-Antworten). Da die Uhrzeit am Anfang der Nutzernachricht steht, verwirft sie zusätzlich bei jeder neuen Minute den wiederverwendbaren Teil. Gemacht:
+- **Geräteanfragen bekommen keine Uhrzeit und keine Erinnerungen** (nur Raum und zuletzt bedientes Gerät). Die Uhrzeit steht nur noch bei Fragen mit Zeitwörtern (spät, Uhr, heute, morgen, Datum ...).
+- **Kurzer Verlauf** für das lokale Modell: höchstens 8 Nachrichten, ältere auf 280 Zeichen gekürzt.
+- **Kurzbefehle-Notiz nie ins Modell** (sie passte durch ihre Gerätewörter auf fast jede Frage und brachte jedes Mal ca. 150 Token).
+- Ergebnis: Prompt-Verarbeitung je Anfrage 0,7 bis 2,9 s statt 2 bis 12 s. Steady-State im Chat: Befehl 2,0 bis 2,4 s, Sammelfrage 2,4 bis 4,3 s, Automationen 1,8 s, Zustand 2,4 s.
+- Bekannte Restschwäche: Selten (ca. jede 20. Anfrage) ruft das Modell statt der Kurzzeile ein falsches Werkzeug auf (einmal `get_weather` bei "Mach das Deckenlicht aus"); dann kostet es einen zweiten Schritt (ca. 13 s).
+- Sicherung: `.env` auf dem Server wurde für den Test der Threads geändert und zurückgestellt (Sicherung `.env.bak-20261019-stt`).
+
 **Hinweise**
 - Der Benchmark entlädt das Cat-Modell am Ende (Kaltstart danach 30 bis 40 s): Danach einmal etwas fragen oder warten, bis `warm()` fertig ist.
 - Zurück zu Werkzeugaufrufen: `CAT_LOCAL_COMPACT=false`.
