@@ -124,6 +124,8 @@ async def voice_endpoint(ws: WebSocket) -> None:
         )
 
     async def on_state(name: str) -> None:
+        if name in ("listening", "thinking"):
+            state.touch()  # Hintergrundaufgaben des Modells machen Platz
         if name in ("idle", "listening", "thinking", "speaking"):
             await state.emit(VoiceState(state=name))  # type: ignore[arg-type]
 

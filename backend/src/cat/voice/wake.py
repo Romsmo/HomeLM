@@ -19,7 +19,23 @@ from cat.intents.text import fold
 
 # Schreibweisen, die Whisper für die Wörter der Phrasen liefert (gefaltet, ohne Umlaute).
 _VARIANTS: dict[str, frozenset[str]] = {
-    "cat": frozenset({"cat", "kat", "katt", "kaet", "cet", "ket", "kett", "caet", "cad", "kad"}),
+    "cat": frozenset(
+        {
+            "cat",
+            "kat",
+            "katt",
+            "kaet",
+            "cet",
+            "ket",
+            "kett",
+            "caet",
+            "cad",
+            "kad",
+            "card",
+            "kart",
+            "kard",
+        }
+    ),
     "hey": frozenset({"hey", "hei", "hej", "hay", "ey", "hai", "he"}),
     "hallo": frozenset({"hallo", "hello", "halo", "hallooo", "hall"}),
     "okay": frozenset({"okay", "ok", "okey", "okei", "oke", "okaay", "kay"}),

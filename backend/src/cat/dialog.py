@@ -97,7 +97,7 @@ async def handle_user_text(
         await state.emit(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
         return Reply("")
     started = time.perf_counter()
-    state.last_activity = time.monotonic()
+    state.touch()
     try:
         # Sprache wartet, bis ein laufendes Gespräch (z. B. ein anderer Satellit) fertig ist.
         await asyncio.wait_for(state.run_lock.acquire(), timeout=LOCK_WAIT_S if wait else None)

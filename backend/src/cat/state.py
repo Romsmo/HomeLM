@@ -91,7 +91,8 @@ class AppState:
             on_new=self._person_created,
             on_forget=self._person_forgotten,
         )
-        self.last_activity = 0.0  # time.monotonic() der letzten Nutzeranfrage
+        self.last_activity = 0.0  # time.monotonic() der letzten Nutzeraktivität
+        self.activity_gen = 0  # zählt Aktivität: Hintergrundaufgaben brechen dann ab
         self.learner = Learner(
             settings.learned_file, self.devices, settings.learn_after, settings.learn
         )
@@ -143,6 +144,11 @@ class AppState:
             self.memory.index.sync()
         except Exception:
             log.warning("Kurzbefehle konnten nicht ins Gedächtnis geschrieben werden")
+
+    def touch(self) -> None:
+        """Der Nutzer tut etwas: Hintergrundaufgaben des Modells machen Platz."""
+        self.last_activity = time.monotonic()
+        self.activity_gen += 1
 
     async def save_fact(self, fact: Fact, speaker: str | None = None) -> bool:
         """Einen selbst erkannten Fakt als Notiz ablegen und dem Nutzer sagen, was gemerkt wurde."""

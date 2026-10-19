@@ -248,3 +248,33 @@ def test_learned_shortcuts_are_exported_as_a_readable_note(tmp_path: Path) -> No
     note = state.memory.store.read("gelerntes/kurzbefehle.md")
     assert note is not None and note.body.count("ist das {dev} an") == 1
     assert "noch nicht" not in note.body
+
+
+async def test_background_generation_stops_as_soon_as_the_user_does_something(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cat import main as main_module
+
+    state = AppState(Settings(_env_file=None, data_dir=tmp_path, plugins=""))  # type: ignore[call-arg]
+    closed: list[bool] = []
+    calls = {"n": 0}
+
+    class Provider:
+        async def stream(self, system, messages, tools):  # type: ignore[no-untyped-def]
+            try:
+                calls["n"] += 1
+                yield TextDelta("Hallo ")
+                if calls["n"] == 1:
+                    state.touch()  # der Nutzer beginnt zu sprechen
+                yield TextDelta("Welt")
+            finally:
+                closed.append(True)
+
+    monkeypatch.setattr(main_module, "build_local_provider", lambda _: Provider())
+    generate = main_module._local_generate(state)
+    with pytest.raises(RuntimeError, match="unterbrochen"):
+        await generate("Schreib etwas")
+    assert closed == [True]  # die Verbindung zu Ollama wurde geschlossen
+
+    calm = await generate("Und jetzt in Ruhe")  # ohne Unterbrechung läuft sie durch
+    assert calm == "Hallo Welt"

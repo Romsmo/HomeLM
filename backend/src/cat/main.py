@@ -65,14 +65,23 @@ def _local_generate(state: AppState) -> "Callable[[str], Awaitable[str]]":
     provider = build_local_provider(state)
 
     async def generate(prompt: str) -> str:
+        """Bricht ab, sobald der Nutzer etwas tut: Ollama beendet die Erzeugung, wenn die
+        Verbindung schließt, und die CPU gehört wieder der Spracherkennung und der Antwort."""
+        started = state.activity_gen
         parts = []
-        async for event in provider.stream(
+        stream = provider.stream(
             "Du schreibst kurze, genaue Texte auf Deutsch und hältst dich an das verlangte Format.",
             [{"role": "user", "content": prompt}],
             [],
-        ):
-            if isinstance(event, TextDelta):
-                parts.append(event.text)
+        )
+        try:
+            async for event in stream:
+                if state.activity_gen != started:
+                    raise RuntimeError("unterbrochen: der Nutzer ist aktiv")
+                if isinstance(event, TextDelta):
+                    parts.append(event.text)
+        finally:
+            await stream.aclose()
         return "".join(parts)
 
     return generate
