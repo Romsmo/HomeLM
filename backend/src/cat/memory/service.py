@@ -21,6 +21,7 @@ _SECRET = re.compile(
     re.IGNORECASE,
 )
 CONTEXT_HITS = 3
+_NOT_FOR_MODEL = frozenset({"gelerntes"})  # Kurzbefehle: nur für Menschen und Claude
 CONTEXT_CHARS = 500
 
 
@@ -39,7 +40,11 @@ class MemoryService:
         """Relevante Erinnerungen als Text für den Systemprompt (leer, wenn nichts passt).
         Mit `person` kommen deren Notizen zuerst (Profil und mit ihrem Namen markierte Fakten)."""
         try:
-            hits = self.index.search(user_text, CONTEXT_HITS)
+            hits = [
+                h
+                for h in self.index.search(user_text, CONTEXT_HITS + 2)
+                if h.note.topic not in _NOT_FOR_MODEL
+            ][:CONTEXT_HITS]
             if person:
                 own = [h for h in self.index.search(person, 3) if person in h.note.tags]
                 seen = {h.note.path for h in own}

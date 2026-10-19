@@ -91,11 +91,17 @@ async def test_local_answer_never_asks_claude(make) -> None:  # type: ignore[no-
 
 async def test_local_prompt_is_static_and_context_goes_to_user_message(make) -> None:  # type: ignore[no-untyped-def]
     env = make([TextDelta("ok")], claude=FakeClaude())
-    await env.ask("Hallo")
+    await env.ask("Wie spät ist es?")
     call = env.provider.calls[0]
     assert "Aktuelle Zeit" not in call["system"]  # bleibt gleich, Ollama behält den Anfang
     assert call["messages"][-1]["content"].startswith("[Aktuelle Zeit:")
-    assert call["messages"][-1]["content"].endswith("Hallo")
+    assert call["messages"][-1]["content"].endswith("Wie spät ist es?")
+
+
+async def test_questions_that_do_not_need_the_time_get_no_context_tokens(make) -> None:  # type: ignore[no-untyped-def]
+    env = make([TextDelta("ok")], claude=FakeClaude())
+    await env.ask("Hallo")
+    assert env.provider.calls[0]["messages"][-1]["content"] == "Hallo"  # nichts davor
 
 
 async def test_local_gets_a_small_toolset_with_ask_claude(make) -> None:  # type: ignore[no-untyped-def]

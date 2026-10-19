@@ -342,13 +342,18 @@ def _assistant_message(text: str, calls: list[ToolCall]) -> Message:
     }
 
 
-def to_llm_messages(items: list[tuple[str, str]], limit: int = 30) -> list[Message]:
+def to_llm_messages(
+    items: list[tuple[str, str]], limit: int = 30, max_chars: int | None = None
+) -> list[Message]:
     """Wandelt (Rolle, Text) in LLM-Nachrichten: letzte `limit`, beginnend mit Nutzer, ohne
     aufeinanderfolgende gleiche Rollen (nach einem fehlgeschlagenen Turn)."""
     out: list[Message] = []
-    for role, text in items[-limit:]:
+    kept = items[-limit:]
+    for index, (role, text) in enumerate(kept):
         if role not in ("user", "assistant") or not text.strip():
             continue
+        if max_chars and index < len(kept) - 1 and len(text) > max_chars:
+            text = text[: max_chars - 1].rstrip() + "…"  # ältere Nachrichten kürzen
         if not out and role != "user":
             continue
         if out and out[-1]["role"] == role:

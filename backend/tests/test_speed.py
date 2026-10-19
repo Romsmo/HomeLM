@@ -533,3 +533,34 @@ def test_compact_mode_is_the_default_and_the_prompt_teaches_the_format() -> None
     prompt = build_local_prompt(claude=True, compact=True)
     assert "S|Gerät|Befehl" in prompt and "L|Stichwort|Zustand" in prompt and "ask_claude" in prompt
     assert "set_state(device" not in prompt
+
+
+def test_old_assistant_messages_are_shortened_for_the_small_model() -> None:
+    from cat.agent.loop import to_llm_messages
+
+    long = "Antwort " * 100
+    items = [("user", "Frage 1"), ("assistant", long), ("user", "Frage 2"), ("assistant", long)]
+    out = to_llm_messages(items, limit=8, max_chars=100)
+    assert len(out[1]["content"]) <= 100 and out[1]["content"].endswith("…")
+    assert out[-1]["content"] == long  # die letzte Nachricht bleibt vollständig
+    assert to_llm_messages(items)[1]["content"] == long  # ohne Grenze unverändert
+
+
+async def test_device_requests_get_no_time_or_memory_in_the_prompt(tmp_path: Path) -> None:
+    from cat.agent.responder import build_responder
+    from cat.ws.protocol import ChatMessage
+
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, data_dir=tmp_path, local_model="q", plugins="", sandbox=False, people=False
+    )
+    state = AppState(settings)
+    service, _ = make(tmp_path)
+    state.devices = service
+    state.memory.remember("Kurzbefehle", "Deckenlicht Roman Rollo schalten", "gelerntes", ["auto"])
+    provider = FakeProvider([TextDelta("ok")], [TextDelta("ok")])  # 2. Schritt: Korrektur
+    responder = build_responder(state, provider=provider)  # type: ignore[arg-type]
+    history = [ChatMessage(id="1", role="user", text="Mach das Deckenlicht von Roman an", ts=0)]
+    _ = [d async for d in responder.reply(history)]
+    sent = provider.calls[0]["messages"][-1]["content"]
+    assert sent == "Mach das Deckenlicht von Roman an"
+    assert state.memory.context_for("Deckenlicht Roman Rollo") == ""  # Kurzbefehle nie fürs Modell

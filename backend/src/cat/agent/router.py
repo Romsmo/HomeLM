@@ -34,6 +34,7 @@ from cat.claude.text import (
     needs_claude,
     split_html,
 )
+from cat.intents.text import tokenize
 from cat.llm.base import LLMError
 from cat.stage.tools import show_html
 from cat.state import AppState
@@ -53,6 +54,17 @@ HEAD_CHARS = 120
 BLOCK_LIMIT_S = 30 * 60
 BLOCK_AUTH_S = 60 * 60
 BLOCK_DOWN_S = 60
+
+
+_TIME_WORDS = frozenset(
+    "uhr uhrzeit spaet zeit datum heute morgen gestern uebermorgen wochentag woche monat jahr "
+    "wann tag tage stunde stunden minute minuten".split()
+)
+
+
+def asks_time(question: str) -> bool:
+    """Braucht die Antwort Datum oder Uhrzeit? Nur dann geht sie in den Kontext."""
+    return bool(set(tokenize(question)) & _TIME_WORDS)
 
 
 def room_hint(room: str) -> str:
@@ -150,24 +162,34 @@ class RoutedResponder:
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         ctx.device_related = self._state.devices.mentions_device(question)
         speaker = self._state.current_speaker
-        memory = await asyncio.to_thread(
-            self._state.memory.context_for, question, speaker.name if speaker else None
-        )
         hint = self._state.devices.last_device_hint()
-        extra = "\n\n".join(
-            p
-            for p in (
-                build_context(),
-                room_hint(room) if room else "",
-                hint,
-                self._state.people.context_line(speaker),
-                memory,
-                SPOKEN_HINT if spoken else "",
+        if ctx.device_related:
+            # Geräteanfragen brauchen weder Uhrzeit noch Erinnerungen: Jedes Token davon kostet
+            # auf der CPU Prompt-Zeit (ca. 130 bis 500 Token je Sekunde), und die Uhrzeit am
+            # Anfang der Nutzernachricht verhindert, dass Ollama deren Anfang wiederverwendet.
+            extra = "\n\n".join(p for p in (room_hint(room) if room else "", hint) if p)
+        else:
+            memory = await asyncio.to_thread(
+                self._state.memory.context_for, question, speaker.name if speaker else None
             )
-            if p
-        )
+            extra = "\n\n".join(
+                p
+                for p in (
+                    build_context() if asks_time(question) else "",
+                    room_hint(room) if room else "",
+                    hint,
+                    self._state.people.context_line(speaker),
+                    memory,
+                    SPOKEN_HINT if spoken else "",
+                )
+                if p
+            )
         # Ohne Geräte-Runden: Das Modell soll Werkzeuge nutzen, nicht frühere Antworten kopieren.
-        messages = to_llm_messages([(m.role, m.text) for m in history if not m.tooled])
+        # Kurzer Verlauf: lange frühere Antworten (z. B. von Claude) sind für das kleine Modell
+        # nur Prompt-Zeit.
+        messages = to_llm_messages(
+            [(m.role, m.text) for m in history if not m.tooled], limit=8, max_chars=280
+        )
         shown = False
         head = ""  # Anfang der Antwort, solange noch nicht klar ist, ob es eine Absage ist
         deciding = self._available()
