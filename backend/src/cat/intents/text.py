@@ -71,7 +71,8 @@ def significant(tokens: list[str]) -> list[str]:
 # Satzanfänge von Fragen (gefaltet).
 QUESTION_STARTS = frozenset(
     "ist sind wie wo was welche welcher welches wer wann warum wieso wieviel wieviele steht stehen "
-    "laeuft brennt hat haben gibt kann zeig zeige sag sage nenn nenne lies".split()
+    "laeuft brennt hat haben gibt kann zeig zeige sag sage nenn nenne lies zaehle zaehl liste "
+    "gib erzaehl erzaehle beschreibe finde suche".split()
 )
 
 
@@ -97,3 +98,18 @@ def power_conflict(user_text: str, command: str) -> str | None:
     if command == "off" and wants_on:
         return "an"
     return None
+
+
+_CONTROL_CUES = (
+    _ON_WORDS
+    | _OFF_WORDS
+    | frozenset(
+        "hoch runter herunter zu oeffne oeffnen schliesse schliessen stopp stoppe stoppen dimme "
+        "dimm prozent".split()
+    )
+)
+
+
+def has_control_cue(text: str) -> bool:
+    """Klingt der Text nach einem Schaltbefehl (an, aus, hoch, runter, Prozent, eine Zahl)?"""
+    return bool(set(tokenize(text)) & _CONTROL_CUES) or bool(re.search(r"\d\s*%|\d+", text))

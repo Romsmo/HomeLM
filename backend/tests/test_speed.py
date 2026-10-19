@@ -180,7 +180,7 @@ async def test_a_command_misrouted_to_get_state_still_gets_executed(tmp_path: Pa
         [ToolCall("c1", "get_state", {"device": "Deckenlicht Roman"})],
         [ToolCall("c2", "set_state", {"device": "Deckenlicht Roman", "command": "on"})],
     )
-    out, _ = await run(agent_for(service, provider), "Mach das Deckenlicht von Roman an")
+    out, _ = await run(agent_for(service, provider), "Mach das Deckenlicht von Roman an", True)
     assert out == "Okay, Deckenlicht Roman ist an." and backend.sent == [("roman", "on")]
     assert len(provider.calls) == 2
 
@@ -404,3 +404,25 @@ async def test_shutter_words_cover_rollos_and_markises_together(tmp_path: Path) 
     )
     out, _ = await run(agent_for(service, provider), "Welche Rollos und Markisen sind offen?")
     assert out == "Offen sind: Rollo Roman Control (Romans Zimmer)."
+
+
+async def test_an_imperative_that_asks_for_information_is_not_treated_as_a_command(
+    tmp_path: Path,
+) -> None:
+    service, _ = make(tmp_path)
+    service.seed_states("openhab", {"RO2": RawState("0")})
+    provider = FakeProvider(
+        [ToolCall("c1", "list_devices", {"query": "Rollos", "state": "offen"})],
+    )
+    text = "zähle mir bitte auf, welche ganzen Rollos einschließlich Markisen offen sind"
+    out, _ = await run(agent_for(service, provider), text, True)
+    assert out == "Offen sind: Rollo Roman Control (Romans Zimmer)." and len(provider.calls) == 1
+
+
+def test_control_cues() -> None:
+    from cat.intents.text import has_control_cue, is_question
+
+    assert has_control_cue("Mach das Licht aus") and has_control_cue("Rollo auf 30 Prozent")
+    assert has_control_cue("Fahr das Rollo runter")
+    assert not has_control_cue("zähle mir bitte auf, welche Rollos offen sind")
+    assert is_question("zähle mir bitte auf, welche Rollos offen sind")

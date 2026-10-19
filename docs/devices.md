@@ -40,6 +40,18 @@ Name ist das Etikett des Items (bei gleichen Namen im Raum der lesbare Item-Name
 
 **Doppelte Items:** In openHAB gibt es für manche Rollläden zwei Items (eines mit schön benanntem Etikett ohne Wert, eines technisch benannten mit Wert). Hat ein Gerät keinen Wert, nennt Cat ähnliche Geräte mit Wert, ohne zu raten, ob es dasselbe ist. Wer das dauerhaft lösen will, blendet das falsche mit `exclude_patterns` aus oder trägt das richtige von Hand ein.
 
+### Zwillings-Items (Rollläden, Markisen)
+
+openHAB legt für ein Gerät oft **zwei Items** an: ein Item mit schönem Etikett im Raum ("Romans Rollo", `Rollo_Roman_Romans_Zimmer__Control`, meldet nie einen Wert) und ein Technik-Item mit Wert (`Rollo_Roman_Control`). Nur das Technik-Item ist mit dem Gerät verbunden: Ein Befehl an das erste Item bewegt nichts (so kam "mein Rollo ist nicht aufgegangen" zustande). Die Erkennung verbindet beide automatisch, wenn die Technik-Namen eine Teilfolge des Etikett-Namens sind (`Rollo_Roman_Control` in `Rollo_Roman_Romans_Zimmer__Control`), der Typ gleich ist und das eine Item einen Wert hat und das andere nicht. Dann gilt:
+
+- In Listen steht nur das Gerät mit dem schönen Namen ("Romans Rollo"), der Zustand kommt vom Zwilling.
+- Befehle gehen an **beide** Items (an das ungenutzte ist das wirkungslos, an das echte kommt er an).
+- Ähnliche Lampen (`Hue_Lampe_Terrasse_...` und `Hue_Lampe_Wohnzimmer_...`) werden nicht verwechselt: Dafür müsste ein Name eine Teilfolge des anderen sein.
+
+### Automationen (openHAB-Regeln)
+
+"Automationen" sind in openHAB **Regeln** (`/rest/rules`), nicht Items. Das Werkzeug `list_automations(query, state)` liest sie nur (GET), fasst Varianten ("Treppenhaus Beschattung Ein Ia, Ib, II") zusammen und antwortet ohne Sprachmodell-Lauf ("Aktiv sind 55 Automationen: ..."; `state`: `aktiv` oder `aus`, aus = in openHAB deaktiviert). Regeln werden weder ausgeführt noch geändert. Die Status-Items der Automatisierung (`Status Beschattung ...`) bleiben nur lesbare Messwerte.
+
 ## Eintrag
 
 ```yaml

@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
 from cat.audit import AuditLog
 from cat.intents.claims import claims_action
-from cat.intents.text import is_question, power_conflict
+from cat.intents.text import has_control_cue, is_question, power_conflict
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
@@ -78,7 +78,8 @@ class Agent:
         guard = self._registry.get("set_state") is not None
         # Befehl (keine Frage) über Geräte: erst erledigt, wenn set_state lief. Kleine Modelle
         # lesen gern erst den Zustand und kündigen dann nur an ("Ich schalte es aus").
-        command = ctx.device_related and not is_question(_last_user_text(history))
+        asked = _last_user_text(history)
+        command = ctx.device_related and not is_question(asked) and has_control_cue(asked)
         for _ in range(self._max_steps):
             step_text: list[str] = []
             calls: list[ToolCall] = []
@@ -165,8 +166,7 @@ class Agent:
                 time.perf_counter() - tools_started,
                 ", ".join(c.name for c in calls),
             )
-            asks = is_question(_last_user_text(history))
-            decided = all(c.name == "set_state" or asks for c in calls)
+            decided = all(c.name == "set_state" or not command for c in calls)
             if ok_count == len(calls) and len(fresh) == len(calls) and decided:
                 # Jedes Werkzeug lieferte seinen fertigen Antworttext: kein zweiter Modellaufruf.
                 yield ("\n\n" if wrote_text else "") + "\n".join(fresh)
