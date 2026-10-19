@@ -75,6 +75,16 @@ class OllamaProvider:
                                 f"Das lokale Modell meldet einen Fehler: {chunk['error']}",
                                 unavailable=True,
                             )
+                        if chunk.get("done"):
+                            log.info(
+                                "Ollama: Prompt %s Token neu verarbeitet (%.1f s), Ausgabe %s Token "
+                                "(%.1f s), Laden %.1f s",
+                                chunk.get("prompt_eval_count", "?"),
+                                chunk.get("prompt_eval_duration", 0) / 1e9,
+                                chunk.get("eval_count", "?"),
+                                chunk.get("eval_duration", 0) / 1e9,
+                                chunk.get("load_duration", 0) / 1e9,
+                            )
                         message = chunk.get("message") or {}
                         if text := message.get("content"):
                             if shown := think.feed(text):

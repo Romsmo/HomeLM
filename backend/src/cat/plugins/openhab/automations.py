@@ -15,7 +15,8 @@ LIST_LIMIT = 12
 _VARIANT = re.compile(r"(?:\s+(?:part\s?\d+|[ivx]+[a-c]?|\d+))+\s*$", re.IGNORECASE)
 # Wörter, die nur "Automation" meinen und nichts eingrenzen.
 _GENERIC = frozenset(
-    "automation automationen regel regeln automatisierung automatisierungen".split()
+    "automation automationen regel regeln automatisierung automatisierungen aktiv aktive aktiven "
+    "an ein aus alle alles gerade jetzt".split()
 )
 _ACTIVE_WORDS = frozenset("aktiv aktiviert an ein eingeschaltet laufen laeuft".split())
 _OFF_WORDS = frozenset("aus deaktiviert inaktiv ausgeschaltet abgeschaltet".split())

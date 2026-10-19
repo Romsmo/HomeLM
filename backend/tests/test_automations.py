@@ -77,3 +77,13 @@ async def test_tool_reads_rules_with_get_only_and_answers_directly(tmp_path) -> 
     assert [r.method for r in seen] == ["GET"] and seen[0].url.path == "/rest/rules"
     await client.aclose()
     assert YAML  # Fixture wird importiert, damit make() dieselbe Allowlist nutzt
+
+
+def test_state_words_in_the_query_do_not_filter_the_names() -> None:
+    items = parse_rules(RULES)
+    assert filter_by_query(items, "aktiv") == items  # das Modell schreibt manchmal A|aktiv
+    assert filter_by_query(items, "alle aktiven") == items
+    assert [a.name for a in filter_by_query(items, "Treppenhaus aktiv")] == [
+        "Treppenhaus Beschattung 100%",
+        "Treppenhaus Beschattung Ein",
+    ]
