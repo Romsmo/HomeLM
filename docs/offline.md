@@ -58,3 +58,26 @@ docker compose exec -T backend python - "Wie spät ist es?" < scripts/local_eval
 ## Alter Cloud-Modus mit Offline-Fallback (nur ohne `CAT_LOCAL_MODEL`)
 
 Ist `CAT_LOCAL_MODEL` leer und `CAT_FALLBACK_MODEL` gesetzt (z. B. `ollama_chat/qwen3:4b-instruct-2507-q4_K_M`, **nicht** `ollama/...` und nicht `qwen3:4b`), versucht Cat zuerst das Cloud-Modell (Wartezeit `CAT_LLM_TIMEOUT_S`, Standard 20 s). Ist es **nicht erreichbar** (Internet weg, Ausfall, Limit), antwortet das lokale Modell, und der Kopf zeigt in Gelb **"Offline-Modell"**. Danach geht es 60 Sekunden direkt zum lokalen Modell, dann wird die Cloud wieder versucht. Nicht umgeschaltet wird bei Konfigurationsfehlern (falscher Schlüssel oder Modellname) und nie mitten in einer Antwort. Dieser Modus braucht einen bezahlten API-Schlüssel und ist für diese Installation nicht vorgesehen.
+
+## Modellvergleich und Plan für schnellere Antworten (2026-10-19)
+
+Gemessen auf dem Server (i5-8500T, 6 Kerne mit AVX2, 7,5 GB RAM) mit `scripts/model_bench.py`: Cats echter Systemprompt und echte Werkzeuge, 11 deutsche Aufgaben je zweimal (Schalten, Rollo prozentual, Dimmen, Zustandsfrage, Sammelfragen mit Zustandsfilter, Automationen, Wetter, Merken, Wissensfrage). Nur die erste Werkzeugwahl wird bewertet, nichts wird ausgeführt.
+
+| Modell (Ollama) | Größe | Treffer | Zeit je Schritt (ohne Kaltstart) | Ausgabe | Bemerkung |
+|---|---|---|---|---|---|
+| `qwen3:4b-instruct-2507-q4_K_M` (aktuell) | 2,5 GB | **22/22** | 4,4 s | 6,9 Token/s | alles richtig |
+| `granite4:3b` | 2,1 GB | 20/22 | ca. 4,2 s | 9,2 Token/s | verfehlt "Rollos und Markisen sind offen" (Filter `an` statt `offen`), kaum schneller |
+| `llama3.2:3b` | 2,0 GB | 18/22 | 3,6 s | 9,8 Token/s | nimmt `get_state` für Sammelfragen, ruft `run_python` für "Minuten pro Stunde" |
+| `qwen3:1.7b` | 1,4 GB | **8/22** | 2,3 s | 15,6 Token/s | unbrauchbar: dreht an/aus um ("Licht aus" sendet `an`), erfindet Parameter, schreibt Aufrufe als Text |
+
+**Ergebnis: Es gibt für diesen Server kein leichteres Modell, das bei den Aufgaben nicht deutlich schlechter ist.** Die Geschwindigkeit hängt an der Speicherbandbreite (jedes Ausgabe-Token liest das ganze Modell): Ein Werkzeugaufruf sind ca. 29 Token und damit ca. 4 s. Kleinere Modelle sparen nur Zeit, indem sie Fehler machen, und bei Geräten sind falsche Befehle schlimmer als langsame. Ein Versuch mit kurzen Werkzeug- und Parameternamen (`set` statt `set_state`) brachte nichts (28 statt 29 Token).
+
+**Plan (in dieser Reihenfolge, nur der erste Punkt ist ohne Ihre Hilfe möglich):**
+
+1. **Fertig:** Wiederholtes läuft über gelernte Kurzbefehle in 0 s, Sammelfragen, Automationen und Zustände ohne zweiten Modelllauf (4 bis 7 s), keine Korrekturrunden mehr bei Auskunftsfragen ("zähle mir auf ...").
+2. **Speicher prüfen (Nutzer, sudo):** `sudo dmidecode -t memory | grep -E "Size|Speed|Locator"`. Steckt nur **ein** RAM-Riegel, ist der Speicher einkanalig: Mit zwei gleichen Riegeln (z. B. 2 x 8 GB DDR4) verdoppelt sich die Bandbreite, und die Ausgabe wird fast doppelt so schnell (ca. 12 Token/s statt 7), ganz ohne Modellwechsel. Gemessen: 7 Token/s x 2,5 GB = ca. 17 GB/s, der Chip kann etwa das Doppelte. Dazu schluckt der knappe RAM (7,5 GB, 2,9 GB Swap belegt, nur 118 MB frei) schon jetzt Reserven.
+3. **CPU-Takt (Nutzer, sudo, Systemeinstellung, deshalb nicht von mir):** `sudo cpupower frequency-set -g performance` (Standard ist `powersave`). Erwartung: etwas gleichmäßigere Zeiten nach Leerlauf, vermutlich unter 10 %. Vorher/nachher mit `scripts/chat_probe.py` messen.
+4. **Danach, mit 16 GB RAM:** Granite 4 `7b-a1b-h` (Mischmodell mit nur 1 Mrd. aktiven Parametern, ca. 4 GB groß) mit `scripts/model_bench.py` prüfen: Nur etwa ein Viertel der Daten pro Token, also potenziell 2 bis 3 x schneller. Es ist nicht getestet, weil es heute nicht in die 3,4 GB des Ollama-Containers passt, ohne Nextcloud und Co. zu gefährden (CLAUDE.md, Abschnitt 5). Zusätzlich dann `qwen3.5:4b` prüfen. Umstellen nur, wenn die Trefferquote bei 22/22 bleibt: `CAT_LOCAL_MODEL=<name>` in `/srv/homelm/.env`, `docker exec homelm-ollama ollama pull <name>`, `docker compose up -d --force-recreate backend`. Rückweg: alten Wert eintragen.
+5. **Nicht empfohlen:** `qwen3:1.7b` (Fehlschaltungen), Cloud-Modell für Geräte (ausdrücklich nicht gewollt), Qwen3-30B-A3B und andere große Mischmodelle (ca. 18 GB RAM).
+
+Hinweis: Wissensfragen beantwortet das lokale Modell manchmal falsch ("Faust" von Lessing, im Test einmal). Dafür ist Claude zuständig (`ask_claude`); das Modell sollte dort öfter abgeben.
