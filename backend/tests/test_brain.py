@@ -278,3 +278,44 @@ async def test_background_generation_stops_as_soon_as_the_user_does_something(
 
     calm = await generate("Und jetzt in Ruhe")  # ohne Unterbrechung läuft sie durch
     assert calm == "Hallo Welt"
+
+
+async def test_background_generation_rewarms_the_main_prompt_afterwards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cat import main as main_module
+
+    state = AppState(Settings(_env_file=None, data_dir=tmp_path, plugins=""))  # type: ignore[call-arg]
+    warmed: list[bool] = []
+
+    class Responder:
+        async def warm(self) -> None:
+            warmed.append(True)
+
+    state.responder = Responder()  # type: ignore[assignment]
+
+    class Provider:
+        async def stream(self, system, messages, tools):  # type: ignore[no-untyped-def]
+            yield TextDelta("Fertig")
+
+    monkeypatch.setattr(main_module, "build_local_provider", lambda _: Provider())
+    assert await main_module._local_generate(state)("x") == "Fertig"
+    assert warmed == [True]  # Cats Prompt wird nach der Hintergrundaufgabe neu vorgewärmt
+
+
+async def test_a_quick_second_message_waits_for_the_lock_instead_of_failing(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from cat.dialog import handle_user_text
+
+    state = AppState(Settings(_env_file=None, data_dir=tmp_path, plugins=""))  # type: ignore[call-arg]
+
+    async def emit(_: object) -> None: ...
+
+    state.emit = emit  # type: ignore[method-assign]
+    await state.run_lock.acquire()
+    asyncio.get_running_loop().call_later(0.1, state.run_lock.release)
+    reply = await handle_user_text(state, "Hallo")  # kein wait=True: trotzdem kein Fehler
+    assert reply.text.startswith("Echo: Hallo")

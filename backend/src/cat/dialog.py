@@ -22,6 +22,7 @@ log = logging.getLogger("cat.dialog")
 
 OnDelta = Callable[[str], Awaitable[None]]
 LOCK_WAIT_S = 30.0
+LOCK_GRACE_S = 0.5
 
 
 class EchoResponder:
@@ -93,15 +94,19 @@ async def handle_user_text(
     `spoken=True`: Die Antwort wird vorgelesen (kurz, ohne Markdown). `on_delta` bekommt die
     Textteile der Antwort (für die satzweise Sprachausgabe). Gibt den Antworttext zurück.
     """
-    if state.run_lock.locked() and not wait:
-        await state.emit(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
-        return Reply("")
     started = time.perf_counter()
     state.touch()
     try:
         # Sprache wartet, bis ein laufendes Gespräch (z. B. ein anderer Satellit) fertig ist.
-        await asyncio.wait_for(state.run_lock.acquire(), timeout=LOCK_WAIT_S if wait else None)
+        # Der Chat hat eine kurze Gnadenfrist: Ein gelernter Kurzbefehl meldet "fertig", bevor er
+        # die Sperre löst, und die nächste Nachricht kommt oft sofort.
+        await asyncio.wait_for(
+            state.run_lock.acquire(), timeout=LOCK_WAIT_S if wait else LOCK_GRACE_S
+        )
     except TimeoutError:
+        if not wait:
+            await state.emit(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
+            return Reply("")
         await state.emit(ErrorEvent(message="Cat ist gerade beschäftigt, bitte noch einmal."))
         return Reply("")
     try:

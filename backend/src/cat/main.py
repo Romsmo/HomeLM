@@ -82,6 +82,15 @@ def _local_generate(state: AppState) -> "Callable[[str], Awaitable[str]]":
                     parts.append(event.text)
         finally:
             await stream.aclose()
+            # Ollama hält nur EIN Gedächtnis des Prompt-Anfangs: Mein Text hat Cats Prompt
+            # verdrängt. Im Leerlauf neu vorwärmen, damit die nächste Anfrage nicht 5 s
+            # Prompt-Verarbeitung nachholen muss. Ist der Nutzer schon aktiv, entfällt das.
+            warm = getattr(state.responder, "warm", None)
+            if warm is not None and state.activity_gen == started:
+                try:
+                    await warm()
+                except Exception:
+                    log.info("Vorwärmen nach der Hintergrundaufgabe fehlgeschlagen")
         return "".join(parts)
 
     return generate

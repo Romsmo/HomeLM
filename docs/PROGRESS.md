@@ -468,3 +468,37 @@ Auftrag des Nutzers: (1) drei natürliche Aktivierungsphrasen mit "Cat" für ges
 - Wer einen bekannten Namen nennt, aber eine unbekannte Stimme hat, wird für die Sitzung als diese Person behandelt (nur Personalisierung), ohne dass die Stimme gespeichert wird.
 - Beim ersten Start lädt Cat das Sprechermodell (29 MB) von GitHub und prüft die SHA-256-Summe. Das ist die einzige neue Verbindung nach außen (kein Nutzerdatum geht dabei raus).
 - Rollback: `CAT_PEOPLE=false`, `CAT_WAKE_REQUIRED=false`, `CAT_FILLER=false`, `CAT_REFLECT=false`, `CAT_KNOWLEDGE_CACHE=false` schalten die Teile einzeln ab; `git revert` der Commits dieser Phasen; Daten bleiben (`data/people.json`, `data/fillers.json`, Notizen).
+
+## Phase 22: Noch schneller (2026-10-19)
+
+Auftrag des Nutzers: nochmals prüfen, was sich beschleunigen lässt. Gemessen wurde jeder Schritt einzeln (Server, warm), nur behalten, was messbar etwas bringt.
+
+**Was bringt etwas (umgesetzt)**
+- **Geräte per Kurzzeile statt Werkzeugaufruf** (`local_compact`, Standard an; `agent/loop.py`, `agent/prompt.py`). Ein Werkzeugaufruf im JSON-Format kostet ca. 29 Ausgabe-Token (4 bis 5 s), eine Zeile wie `S|Deckenlicht Roman|off` nur ca. 9 (1 bis 2 s). Das Modell schreibt jetzt `S|Gerät|Befehl` (schalten), `G|Gerät` (lesen), `L|Stichwort|Zustand` (auflisten) und `A|Stichwort|Zustand` (Automationen); der Agent macht daraus den normalen Werkzeugaufruf (mit allen Sicherungen: Gegenteil-Prüfung, Audit-Log, Bestätigung bei `high`). Kurzzeilen werden nie angezeigt (der Anfang der Antwort wird gepuffert), mehrere Zeilen sind mehrere Aufrufe, steht sonst etwas in der Antwort, gilt sie als normaler Text. Die vier Gerätewerkzeuge entfallen aus dem Prompt (ca. 700 Zeichen weniger). Benchmark `scripts/model_bench.py` (jetzt wie im Betrieb): Geräteschritte **1,0 bis 2,3 s statt 4,3 bis 5,4 s**, Durchschnitt über alle Aufgaben 4,4 auf 2,4 s, Trefferquote 23/24 (der eine Fehler ist die bekannte Verwechslung an/aus, die `power_conflict` abfängt).
+- **Hintergrundaufgaben machen Platz** (`state.touch()`): Füllsatz-Werkstatt und Selbst-Merken (Modelllauf im Leerlauf) brechen sofort ab, wenn der Nutzer spricht oder schreibt (Verbindung zu Ollama wird geschlossen). Gemessen vorher: eine Spracherkennung brauchte einmal 31 Sekunden, weil gerade so ein Lauf die CPU belegte. Danach wird Cats Prompt neu vorgewärmt, weil Ollama nur EINEN Prompt-Anfang im Gedächtnis hält und der fremde Text ihn verdrängt hatte (die nächste Anfrage hätte ca. 5 s Prompt-Verarbeitung nachholen müssen).
+- **Zweite Chat-Nachricht direkt hinterher**: gab "Cat antwortet noch", weil ein gelernter Kurzbefehl "fertig" meldet, bevor er die Sperre löst. Jetzt 0,5 s Gnadenfrist.
+- Whisper erkennt "Cat" gelegentlich als "Card" oder "Kart": gilt jetzt ebenfalls als Aktivierung.
+
+**Gemessen, aber nicht übernommen**
+- **Mehr Threads für die Spracherkennung:** 2 Threads 2,7 s, **3 Threads 2,1 s (Optimum, bleibt)**, 4 Threads 2,4 s, 6 Threads 5,0 s (die Kerne teilen sich Nextcloud, Postgres und Ollama; wartet ein Thread auf einen belegten Kern, bremst er alle).
+- **Whisper `base` statt `small`:** dreimal schneller (0,5 statt 1,6 s auf dem PC), aber schlechter bei Gerätenamen ("Marquisen", "Romant", "Kart"). Bleibt bei `small`.
+- `chunk_length` in faster-whisper (kürzeres Audiofenster): kein Effekt auf die Zeit.
+- Kürzere Werkzeugnamen (`set` statt `set_state`): kein Effekt (28 statt 29 Token).
+- **Vorzeitige Spracherkennung während der Sprechpause:** Würde höchstens 0,6 s sparen und rechnet umsonst, wenn der Nutzer weiterspricht. Nicht gebaut.
+
+**Messung (Server, warm, Chat)**
+
+| Anfrage | vorher (Phase 16/17) | jetzt |
+|---|---|---|
+| Befehl "Mach das Deckenlicht von Roman an" | 5 bis 7 s | 2,6 s |
+| "Welche Rollos und Markisen sind offen?" | 4,7 bis 11 s | 2,9 s |
+| "Welche Automationen sind gerade aktiv?" | (neu) 4 bis 7 s | 2,0 s |
+| Einfache Frage ("Wie viele Tage hat eine Woche?") | 3 bis 4 s | 2,0 s |
+| Gelernte Kurzbefehle | 0,0 s | 0,0 s |
+
+Im Sprachweg kommen Pause (1,1 s) und Spracherkennung (ca. 2,1 s) dazu, bevor das Modell anfängt; das erste Audio ist durch den Füllsatz nach ca. 3 bis 4 s da.
+
+**Hinweise**
+- Der Benchmark entlädt das Cat-Modell am Ende (Kaltstart danach 30 bis 40 s): Danach einmal etwas fragen oder warten, bis `warm()` fertig ist.
+- Zurück zu Werkzeugaufrufen: `CAT_LOCAL_COMPACT=false`.
+- Offene Hebel (brauchen Sie): RAM und CPU-Takt, siehe `docs/offline.md`, Abschnitt "Modellvergleich".

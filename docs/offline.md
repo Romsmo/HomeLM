@@ -20,7 +20,7 @@ Gemessen am 17.10.2026 auf dem Heimserver (i5-8500T, 6 Kerne, Ollama-Container m
 | Verarbeiten des Prompts | ca. 30 Token pro Sekunde (neuer Text), bereits bekannter Anfang ist sofort da |
 | Kaltstart (Modell laden + Prompt) | 6 s Laden, der erste Prompt mit Werkzeugen bis zu 75 s |
 | Einfache Frage ("Wie viele Minuten hat eine Stunde?") | 3 bis 4 s (vorher 4 bis 5 s, am Anfang der Phase 16,8 s) |
-| Frage mit Werkzeug (Phase 16, Stand 2026-10-17) | Zustand eines Geräts 4 bis 6 s, Sammelfrage mit Zustandsfilter 5 bis 11 s, Befehl 7 s (mit Umweg 12 bis 19 s); vorher 17 bis 50 s. Gelernt: 0,0 s |
+| Frage mit Werkzeug (Phase 22, Stand 2026-10-19) | Befehl 2,6 s, Zustand 2 bis 3 s, Sammelfrage 2,9 s, Automationen 2,0 s (Geräte als Kurzzeile); vorher 5 bis 11 s und in Phase 16 noch 17 bis 50 s. Gelernt: 0,0 s |
 | Gedächtnis schreiben / lesen | 27 s / 11 s |
 | Lange Geschichte (20 Sätze) | ca. 2 Minuten |
 | RAM | Ollama 3,06 GiB (Limit 3,5 GiB), Server danach ca. 1,2 GB verfügbar, kein Speicherdruck (PSI 0), kein Swap-Verkehr während der Antwort |
