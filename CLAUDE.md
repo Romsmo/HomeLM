@@ -117,6 +117,8 @@ docs/            # cat-plan.md, phase-prompts.md, PROGRESS.md, server-inventory.
 - **Keine Secrets im Code oder Repo.** Nur `.env` (gitignored) plus `.env.example` ohne echte Werte. Secrets nie loggen.
 - **Gerätesteuerung** nur über Allowlist. Risikostufen `low`, `medium`, `high`. Bei `high` (Türen, Schlösser, Garage) ist eine ausdrückliche Bestätigung Pflicht (UI oder Sprache), **im Backend erzwungen**, nicht nur im Prompt.
 - **Audit-Log** für jeden Tool-Aufruf (Zeit, Tool, Parameter, Ergebnis).
+- **Stimm-Fingerabdrücke sind biometrisch** (`docs/people.md`): nur lokal in `data/people.json`, nur nach ausdrücklichem Ja, jederzeit löschbar, nie in Notizen, Logs oder an Claude, und **nie zur Freigabe** von etwas (Bestätigungen für `high` gelten für jeden gleich).
+- **Unadressierte Sprache** (ohne Aktivierungsphrase, `docs/voice.md`) wird nach der Texterkennung verworfen: kein Modell, kein Speichern, keine Stimmerkennung.
 - **KI-generiertes HTML** nur in Sandbox-iframe: `sandbox="allow-scripts"`, ohne `allow-same-origin`, strikte CSP, kein Netzwerk, kein Zugriff auf Token oder Cookies, Kommunikation über feste `postMessage`-Schnittstelle.
 - **Code-Ausführung** nur in einem Docker-Container ohne Netzwerk, mit Ressourcenlimits. KI-erzeugte Plugins werden nicht automatisch aktiv, sondern landen in `pending/` und brauchen die Freigabe des Nutzers.
 - Weboberfläche mit Authentifizierung. Keine offenen Endpunkte außer `/health`.

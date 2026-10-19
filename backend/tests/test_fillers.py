@@ -72,6 +72,8 @@ def test_good_sentences_are_accepted(text: str) -> None:
         "Das ist ein sehr langer Satz, der mit viel zu vielen Worten nichts Kurzes mehr sagt.",
         "Siehe https://example.com bitte.",
         "Ergebnis folgt gleich.",
+        "Hm, gleich nachgedacht.",  # Vergangenheitsform klingt schief
+        "Das Wetter ist schön heute abend.",  # sagt nichts über Warten
     ],
 )
 def test_bad_sentences_are_rejected(text: str) -> None:
@@ -178,7 +180,7 @@ async def test_workshop_survives_a_failing_model(tmp_path: Path) -> None:
 
 def test_workshop_prompt_asks_for_short_non_committal_sentences() -> None:
     prompt = workshop_prompt("lookup", ["Moment, ich schaue kurz nach."])
-    assert "höchstens 8 Wörter" in prompt and "kein Ergebnis" in prompt.replace("verraten ", "")
+    assert "Höchstens 8 Wörter" in prompt and "kein Ergebnis" in prompt
 
 
 # --- im Dialog ---

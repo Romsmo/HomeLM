@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -55,7 +56,7 @@ BUILTIN: dict[str, tuple[str, ...]] = {
     "control": (
         "Mach ich, einen Moment.",
         "Okay, ich kümmere mich drum.",
-        "Wird gemacht, kleinen Moment.",
+        "Gib mir kurz einen Moment, ich mach das.",
         "Alles klar, gleich geht's los.",
     ),
     "memory": (
@@ -77,6 +78,14 @@ BUILTIN: dict[str, tuple[str, ...]] = {
     ),
 }
 _MEMORY_WORDS = frozenset("merk merke notiere notier schreib vergiss erinner erinnere".split())
+# Ein Füllsatz sagt, dass es gleich weitergeht: Er enthält "ich" oder ein Wort der Wartezeit.
+_WAIT_WORDS = frozenset(
+    "moment augenblick sekunde gleich kurz warte warten gedulden bitte schnell mal".split()
+)
+# Mittelwort der Vergangenheit ("nachgedacht", "geschaut"): klingt als Füllsatz schief.
+_PARTICIPLE = re.compile(r"^(?:\w+ge\w+|ge\w{3,})t$")
+# Neu geschriebene Sätze kommen seltener dran als die geprüften Vorgaben.
+GENERATED_WEIGHT = 0.35
 MAX_WORDS = 9
 MAX_CHARS = 70
 PER_CATEGORY_TARGET = 14  # so viele Sätze je Kategorie, dann wächst die Liste nicht weiter
@@ -121,6 +130,11 @@ def valid_phrase(text: str) -> str | None:
     if claims_action(clean):
         return None  # keine Ergebnisse behaupten ("Das Licht ist aus.")
     if any(w in fold(clean) for w in ("http", "www", "ergebnis", "fertig", "erledigt")):
+        return None
+    tokens = tokenize(clean)
+    if not ({"ich"} | _WAIT_WORDS) & set(tokens):
+        return None
+    if any(_PARTICIPLE.match(t) for t in tokens):
         return None
     return clean
 
@@ -212,6 +226,9 @@ class FillerBank:
             with_topic = [f for f in pool if "{topic}" in f.text]
             if with_topic and random.random() < 0.6:
                 pool = with_topic
+        builtin = [f for f in pool if f.source == "builtin"]
+        if builtin and len(builtin) < len(pool) and random.random() > GENERATED_WEIGHT:
+            pool = builtin  # meistens die geprüften Vorgaben, neue Sätze nur ab und zu
         pool.sort(key=lambda f: f.last_used)
         oldest = [f for f in pool if f.last_used == pool[0].last_used]
         chosen = random.choice(oldest)
@@ -279,14 +296,14 @@ Generate = Callable[[str], Awaitable[str]]
 
 
 def workshop_prompt(category: str, examples: list[str]) -> str:
-    shown = "\n".join(f"- {e.replace('{topic}', 'dem Thema')}" for e in examples[:4])
+    shown = "\n".join(f"- {e.replace('{topic}', 'dem Thema')}" for e in examples[:3])
     return (
-        "Schreibe 5 neue, sehr kurze deutsche Sätze (höchstens 8 Wörter) für einen "
-        f"Heimassistenten, der {DESCRIPTIONS[category]}. Der Assistent duzt, ist freundlich "
-        "und ruhig. Die Sätze sagen nur, dass er gleich antwortet, und verraten kein Ergebnis. "
-        "Keine Zahlen, keine Emojis, kein Markdown. Jeder Satz steht in einer eigenen Zeile.\n"
-        f"Beispiele für den Stil:\n{shown}\n"
-        "Neue Sätze (nicht aus den Beispielen):"
+        f"Ein freundlicher Heimassistent sagt kurze Sätze, während er {DESCRIPTIONS[category]}. "
+        f"Beispiele:\n{shown}\n\n"
+        "Formuliere diese Sätze auf 5 neue, natürliche Arten um, so wie man sie im Alltag sagt. "
+        "Höchstens 8 Wörter je Satz, in der Du-Form, ruhig und freundlich. Der Satz sagt nur, "
+        "dass es gleich weitergeht, und nennt kein Ergebnis. Keine Zahlen, keine Emojis, kein "
+        "Markdown. Jeder Satz steht in einer eigenen Zeile, sonst nichts."
     )
 
 
