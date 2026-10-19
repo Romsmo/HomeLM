@@ -206,7 +206,10 @@ class DeviceService:
             if best >= 72:
                 scored.append((best, spec))
         scored.sort(key=lambda x: (-x[0], not x[1].listed, x[1].name))
-        return [self.info(spec) for _, spec in scored[:limit]]
+        # Zwillings-Items (Technik-Name) nicht zusätzlich zum Gerät mit dem schönen Namen zeigen.
+        twins = {t for _, spec in scored for t in spec.twins}
+        top = [spec for _, spec in scored if spec.item not in twins]
+        return [self.info(spec) for spec in top[:limit]]
 
     def list_event(self) -> DeviceList:
         return DeviceList(

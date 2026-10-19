@@ -461,3 +461,12 @@ def test_lamps_with_similar_names_are_not_mistaken_for_twins() -> None:
     out = {d.spec.item: d for d in discover_openhab(items, DiscoverConfig(enabled=True))}
     assert out["Hue_Lampe_Wohnzimmer_Helligkeit"].spec.twins == []
     assert out["Hue_Lampe_Terrasse_Helligkeit"].spec.listed
+
+
+async def test_search_shows_only_the_nice_name_of_a_twin_pair(tmp_path: Path) -> None:
+    h = Harness(tmp_path, "discover:\n  openhab: {enabled: true}\ndevices: []\n")
+    client = httpx.AsyncClient(base_url="http://oh", transport=httpx.MockTransport(Recorder(ITEMS)))
+    await OpenHabPlugin(h.service, client=client).discover()
+    names = [i.name for i in h.service.search("Rollo Roman")]
+    assert "Romans Rollo" in names and "Rollo Roman Control" not in names
+    await client.aclose()

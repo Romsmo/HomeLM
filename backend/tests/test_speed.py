@@ -400,7 +400,7 @@ async def test_shutter_words_cover_rollos_and_markises_together(tmp_path: Path) 
     service, _ = make(tmp_path)
     service.seed_states("openhab", {"RO2": RawState("0")})
     provider = FakeProvider(
-        [ToolCall("c1", "list_devices", {"query": "Rollos und Markisen", "state": "offen"})]
+        [ToolCall("c1", "list_devices", {"query": "Rollos oder Markisen", "state": "offen"})]
     )
     out, _ = await run(agent_for(service, provider), "Welche Rollos und Markisen sind offen?")
     assert out == "Offen sind: Rollo Roman Control (Romans Zimmer)."

@@ -34,6 +34,9 @@ _STATE_WORDS = {
 }  # fmt: skip
 # Wortanfänge für Rollläden, Rollos, Jalousien und Markisen: Fragt der Nutzer nur danach, kommen
 # alle Geräte dieses Typs (Markisen heißen nicht "Rollo").
+_FILLER = frozenset(
+    "oder sowie auch alle alles ganzen ganze einschliesslich inklusive samt".split()
+)
 _SHUTTER_STEMS = frozenset({"rollo", "rolla", "rolll", "jalou", "marki"})
 _STATE_TITLE = {"an": "An", "aus": "Aus", "offen": "Offen", "zu": "Zu"}
 
@@ -89,7 +92,7 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 raise ToolError("state: an, aus, offen oder zu.")
         else:
             wanted = None
-        words = [t for t in tokenize(query) if len(t) >= 4]
+        words = [t for t in tokenize(query) if len(t) >= 4 and t not in _FILLER]
         if words and all(t[:5] in _SHUTTER_STEMS for t in words):
             infos = [i for i in service.snapshot(room or None) if i.type == "shutter"]
         elif query:
