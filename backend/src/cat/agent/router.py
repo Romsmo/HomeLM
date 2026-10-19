@@ -15,6 +15,7 @@ Jede Frage an Claude steht im Audit-Log und zählt gegen das Tageslimit.
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 
@@ -41,6 +42,7 @@ from cat.ws.protocol import ChatMessage
 log = logging.getLogger("cat.agent")
 
 ASK_CLAUDE = "ask_claude"
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 SPOKEN_HINT = (
     "Diese Antwort wird laut vorgelesen: höchstens 1 bis 2 kurze Sätze, kein Markdown, keine "
     "Aufzählungen, keine Sonderzeichen. Stelle bei Bedarf genau eine kurze Rückfrage."
@@ -88,6 +90,11 @@ def build_ask_claude_tool() -> Tool:
     )
 
 
+def ctx_device_related(state: AppState, question: str) -> bool:
+    """Geht es um Geräte? Dann nie aus dem Wissens-Cache antworten."""
+    return state.devices.mentions_device(question)
+
+
 class RoutedResponder:
     """Responder für den Lokal-zuerst-Modus (Protokoll `state.Responder`)."""
 
@@ -132,6 +139,13 @@ class RoutedResponder:
             async for part in self._escalate(history, Escalation("task"), spoken):
                 yield part
             return
+
+        if not ctx_device_related(self._state, question):
+            parts = [p async for p in self._from_memory(question, spoken)]
+            if parts:
+                for part in parts:
+                    yield part
+                return
 
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         ctx.device_related = self._state.devices.mentions_device(question)
@@ -223,17 +237,11 @@ class RoutedResponder:
             return
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
         settings = self._state.settings
-        if settings.knowledge_cache and escalation.reason != "explicit":
-            cached = await asyncio.to_thread(self._state.memory.cached_answer, question)
-            if cached is not None:  # schon einmal geklärt: sofort, ohne Claude und ohne Kontingent
-                log.info("Wissens-Cache: Antwort vom %s", cached.date)
-                for part in chunk(cached.answer):
+        if escalation.reason != "explicit":
+            parts = [p async for p in self._from_memory(question, spoken)]
+            if parts:
+                for part in parts:
                     yield part
-                if not spoken:
-                    yield (
-                        f"\n\n*Aus dem Gedächtnis (Antwort von Claude vom {cached.date}). "
-                        "Sag „frag Claude nochmal“ für eine frische Antwort.*"
-                    )
                 return
         who = self._state.current_speaker
         memory = await asyncio.to_thread(
@@ -270,6 +278,26 @@ class RoutedResponder:
             yield part
         if not spoken:
             yield FOOTER_PREFIX
+
+    async def _from_memory(self, question: str, spoken: bool) -> AsyncIterator[str]:
+        """Hat Claude diese zeitlose Frage schon einmal beantwortet? Dann sofort daraus antworten
+        (ohne Sprachmodell, ohne Claude, ohne Kontingent). Nichts, wenn es keinen Treffer gibt."""
+        if not self._state.settings.knowledge_cache:
+            return
+        cached = await asyncio.to_thread(self._state.memory.cached_answer, question)
+        if cached is None:
+            return
+        log.info("Wissens-Cache: Antwort vom %s", cached.date)
+        answer = (
+            " ".join(_SENTENCE_END.split(cached.answer.strip())[:2]) if spoken else cached.answer
+        )
+        for part in chunk(answer):
+            yield part
+        if not spoken:
+            yield (
+                f"\n\n*Aus dem Gedächtnis (Antwort von Claude vom {cached.date}). "
+                "Sag „frag Claude nochmal“ für eine frische Antwort.*"
+            )
 
     def _file_note(self) -> str:
         """Hinweis auf die zuletzt abgelegten Dateien (Pfad im Container der Brücke: /inbox)."""

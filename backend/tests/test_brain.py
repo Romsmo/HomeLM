@@ -201,6 +201,9 @@ async def test_the_same_question_is_answered_from_memory_without_claude(tmp_path
     again = await env.ask("Wer hat Goethes Faust geschrieben?")
     assert "Goethe" in again and "Aus dem Gedächtnis" in again
     assert len(claude.prompts) == 1 and env.budget.used_today == 1
+    assert env.provider.calls == []  # auch das lokale Modell wurde nicht gefragt
+    spoken = await env.ask("Wer hat Goethes Faust geschrieben?", spoken=True)
+    assert "Goethe" in spoken and "Gedächtnis" not in spoken  # gesprochen: ohne Hinweis
     # Ausdrücklich Claude verlangt: immer frisch (hier ohne weitere Antwort in FakeClaude).
     assert knowledge.TOPIC in {n.topic for n in env.state.memory.store.all()}
 
