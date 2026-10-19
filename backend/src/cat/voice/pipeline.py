@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from cat.voice.sentences import SentenceChunker
 from cat.voice.vad import Segmenter, VadConfig
+from cat.voice.wake import WakeDetector, WakeWindow
 
 log = logging.getLogger("cat.voice")
 
@@ -93,6 +94,7 @@ class VoiceSession:
         send_audio: SendAudio,
         room: str | None = None,
         on_state: StateHook | None = None,
+        wake: WakeDetector | None = None,
     ) -> None:
         self._engine = engine
         self._handle_text = handle_text
@@ -103,6 +105,11 @@ class VoiceSession:
         self._segmenter = engine.new_segmenter()
         self._busy = False
         self._tasks: set[asyncio.Task[None]] = set()
+        # Aktivierungsphrase (nur Browser): ohne sie und ohne offenes Gesprächsfenster
+        # wird eine Äußerung verworfen.
+        self._wake = wake
+        self._sentences: asyncio.Queue[str | None] | None = None
+        self._window = WakeWindow(wake.followup_s) if wake else None
 
     async def _state(self, name: str) -> None:
         await self._send_json({"type": "voice.state", "state": name})
@@ -128,6 +135,7 @@ class VoiceSession:
     async def _utterance(self, pcm: bytes) -> None:
         latency = Latency(pause_ms=round(self._engine.vad_config.silence_s * 1000))
         t0 = time.perf_counter()
+        ignored = False
 
         def since() -> int:
             return round((time.perf_counter() - t0) * 1000)
@@ -140,8 +148,22 @@ class VoiceSession:
                 if not text:
                     await self._send_json({"type": "voice.empty"})
                     return
+                if self._wake is not None and self._window is not None:
+                    heard = self._wake.match(text)
+                    if heard.woke:
+                        text = heard.rest
+                    elif not self._window.is_open:
+                        ignored = True  # nicht an Cat gerichtet: verwerfen, nichts speichern
+                        await self._send_json({"type": "voice.ignored"})
+                        return
+                    if not text:
+                        await self._send_json({"type": "voice.woke"})
+                        await self._say(self._wake.ack(), latency, since)
+                        await self._open_window()
+                        return
                 await self._send_json({"type": "voice.transcript", "text": text})
                 await self._answer(text, latency, since)
+                await self._open_window()
         except Exception:
             log.exception("Sprachverarbeitung fehlgeschlagen")
             await self._send_json(
@@ -149,24 +171,57 @@ class VoiceSession:
             )
         finally:
             latency.total_ms = since()
-            await self._send_json(latency.as_event())
-            log.info(
-                "voice latency: pause=%s stt=%s first_token=%s first_audio=%s total=%s ms "
-                "(fastpath=%s)",
-                latency.pause_ms,
-                latency.stt_ms,
-                latency.first_token_ms,
-                latency.first_audio_ms,
-                latency.total_ms,
-                latency.via_fastpath,
-            )
+            if not ignored:
+                await self._send_json(latency.as_event())
+                log.info(
+                    "voice latency: pause=%s stt=%s first_token=%s first_audio=%s total=%s ms "
+                    "(fastpath=%s)",
+                    latency.pause_ms,
+                    latency.stt_ms,
+                    latency.first_token_ms,
+                    latency.first_audio_ms,
+                    latency.total_ms,
+                    latency.via_fastpath,
+                )
             self._segmenter.reset()
             self._busy = False
             await self._state("idle")
 
+    async def say_filler(self, text: str) -> None:
+        """Füllsatz sprechen, während Cat noch nachdenkt (nicht Teil der Antwort)."""
+        if self._sentences is not None:
+            await self._sentences.put(text)
+
+    async def _open_window(self) -> None:
+        """Nach einer Antwort darf der Nutzer ohne Phrase weitersprechen."""
+        if self._window is not None:
+            self._window.open()
+            await self._send_json({"type": "voice.window", "seconds": self._window._seconds})
+
+    async def _say(self, text: str, latency: Latency, since: Callable[[], int]) -> None:
+        """Einen kurzen Satz sprechen (Rückmeldung), ohne Dialog."""
+        started = False
+        async for chunk in self._engine.tts.synthesize(text):
+            if not started:
+                started = True
+                latency.first_audio_ms = since()
+                await self._state("speaking")
+                await self._send_json(
+                    {
+                        "type": "tts.start",
+                        "rate": self._engine.tts.sample_rate,
+                        "channels": 1,
+                        "format": "s16le",
+                    }
+                )
+            await self._send_audio(chunk)
+        if started:
+            await self._send_json({"type": "tts.end", "expects_reply": True})
+
     async def _answer(self, text: str, latency: Latency, since: Callable[[], int]) -> None:
         sentences: asyncio.Queue[str | None] = asyncio.Queue()
         chunker = SentenceChunker()
+        self._sentences = sentences
         spoken: list[str] = []
         started = False
 
@@ -199,6 +254,7 @@ class VoiceSession:
             if (rest := chunker.flush()) is not None:
                 await sentences.put(rest)
         finally:
+            self._sentences = None
             await sentences.put(None)
             await speaker
         if reply.first_output_s is not None:

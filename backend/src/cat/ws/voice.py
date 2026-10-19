@@ -13,6 +13,7 @@ from cat.dialog import handle_user_text
 from cat.satellites import Satellite
 from cat.state import AppState
 from cat.voice.pipeline import Reply, VoiceSession
+from cat.voice.wake import WakeDetector
 from cat.ws.endpoint import _origin_ok
 from cat.ws.protocol import VoiceState
 
@@ -40,6 +41,7 @@ async def voice_info(request: Request) -> dict[str, Any]:
         "error": engine.error if engine else None,
         "stt": getattr(engine.stt, "model_name", "") if engine else None,
         "voice": getattr(engine.tts, "voice_name", "") if engine else None,
+        "wake": wake_info(request.app.state.cat.settings),
     }
 
 
@@ -47,6 +49,18 @@ async def voice_info(request: Request) -> dict[str, Any]:
 async def satellite_list(request: Request) -> dict[str, Any]:
     registry = request.app.state.cat.satellites
     return {"satellites": registry.listing(), "error": registry.error}
+
+
+def wake_phrases(settings: Any) -> list[str]:
+    return [p.strip() for p in str(settings.wake_phrases).split(",") if p.strip()]
+
+
+def wake_info(settings: Any) -> dict[str, Any]:
+    return {
+        "required": bool(settings.wake_required),
+        "phrases": wake_phrases(settings),
+        "followup_s": settings.wake_followup_s,
+    }
 
 
 def _state(ws: WebSocket) -> AppState:
@@ -102,6 +116,7 @@ async def voice_endpoint(ws: WebSocket) -> None:
             room,
             spoken=True,
             on_delta=on_delta,
+            on_filler=lambda text: session.say_filler(text),
             manage_voice_state=False,
             wait=True,  # mehrere Satelliten: nacheinander statt "bitte warten"
         )
@@ -119,6 +134,12 @@ async def voice_endpoint(ws: WebSocket) -> None:
         # Der Raum eines Satelliten steht in der Registrierung, der Client kann ihn nicht ändern.
         room=satellite.room if satellite else None,
         on_state=on_state,
+        # Der Browser hört immer zu und braucht die Phrase; Satelliten wecken per Wake-Word.
+        wake=(
+            WakeDetector(wake_phrases(state.settings), state.settings.wake_followup_s)
+            if satellite is None and state.settings.wake_required
+            else None
+        ),
     )
     if satellite:
         state.satellites.mark_connected(satellite)

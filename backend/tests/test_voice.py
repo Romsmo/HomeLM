@@ -26,6 +26,7 @@ from cat.voice.pipeline import Reply, VoiceEngine, VoiceSession
 from cat.voice.sentences import SentenceChunker
 from cat.voice.tts import speakable
 from cat.voice.vad import WINDOW, Segmenter, VadConfig
+from cat.voice.wake import WakeDetector
 from tests.conftest import PASSWORD
 from tests.helpers import drain_replay
 
@@ -347,7 +348,7 @@ async def test_timeout_when_nobody_speaks() -> None:
 # --- WebSocket-Endpunkt ---
 
 
-def voice_app(tmp_path: Path, voice: bool = True) -> Any:
+def voice_app(tmp_path: Path, voice: bool = True, wake_required: bool = False) -> Any:
     settings = Settings(
         _env_file=None,  # type: ignore[call-arg]
         password=PASSWORD,  # type: ignore[arg-type]
@@ -359,6 +360,7 @@ def voice_app(tmp_path: Path, voice: bool = True) -> Any:
         learn=False,
         summarize_sessions=False,
         voice=False,
+        wake_required=wake_required,
     )
     app = create_app(settings)
     if voice:
@@ -392,6 +394,11 @@ def test_voice_info_reports_models(tmp_path: Path) -> None:
             "error": None,
             "stt": "fake",
             "voice": "fake-voice",
+            "wake": {
+                "required": False,
+                "phrases": ["hey cat", "hallo cat", "okay cat"],
+                "followup_s": 20.0,
+            },
         }
 
 
@@ -482,3 +489,97 @@ async def test_real_models_roundtrip_speech_vad_stt() -> None:
     assert "licht" in text and "an" in text and "k" in text
     # Reine Stille ergibt keinen Text (keine erfundenen Sätze).
     assert await stt.transcribe(silence(2.0)) == ""
+
+
+# --- Aktivierungsphrasen ---
+
+
+@pytest.mark.parametrize(
+    ("text", "rest"),
+    [
+        ("Hey Cat, mach das Licht an", "mach das Licht an"),
+        ("hey cat mach das licht an", "mach das licht an"),
+        ("Hallo Cat. Wie spät ist es?", "Wie spät ist es?"),
+        ("Okay Cat, Rollo runter", "Rollo runter"),
+        ("OK Kat, Rollo runter", "Rollo runter"),  # Whisper schreibt Cat oft anders
+        ("Hey Kät, Rollo runter", "Rollo runter"),
+        ("Ähm, hey Cat, Licht aus", "Licht aus"),
+        ("Mach das Licht an, hey Cat", "Mach das Licht an"),
+        ("Hey Cat", ""),
+    ],
+)
+def test_wake_phrase_is_found_at_start_or_end_and_removed(text: str, rest: str) -> None:
+    result = WakeDetector().match(text)
+    assert result.woke and result.rest == rest
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Mach das Licht an",
+        "Die Katze sitzt auf dem Sofa",
+        "Cat ist ein schöner Name",  # nur der Name, ohne Begrüßung
+        "Ich habe gestern Hey gesagt und dann Cat",
+        "",
+    ],
+)
+def test_speech_without_the_phrase_does_not_wake(text: str) -> None:
+    assert not WakeDetector().match(text).woke
+
+
+async def test_without_phrase_nothing_reaches_the_dialog_and_nothing_is_said() -> None:
+    engine, out = make_engine(), Collector()
+
+    async def handle(*_: Any) -> Reply:
+        raise AssertionError("darf nicht aufgerufen werden")
+
+    session = VoiceSession(engine, handle, out.send_json, out.send_audio, wake=WakeDetector())
+    await talk(session)
+    assert "voice.ignored" in out.types()
+    assert "voice.transcript" not in out.types() and "tts.start" not in out.types()
+    assert "voice.latency" not in out.types()
+    assert out.json[-1] == {"type": "voice.state", "state": "idle"}
+
+
+async def test_phrase_is_stripped_and_a_follow_up_window_opens() -> None:
+    engine, out = make_engine(FakeStt("Hey Cat, mach das Licht an")), Collector()
+    heard: list[str] = []
+
+    async def handle(text: str, room: str | None, on_delta: Any) -> Reply:
+        heard.append(text)
+        await on_delta("Okay, ist an.")
+        return Reply("Okay, ist an.", 0.01)
+
+    session = VoiceSession(
+        engine, handle, out.send_json, out.send_audio, wake=WakeDetector(followup_s=5)
+    )
+    await talk(session)
+    assert heard == ["mach das Licht an"]
+    assert (
+        next(e for e in out.json if e["type"] == "voice.transcript")["text"] == "mach das Licht an"
+    )
+    assert next(e for e in out.json if e["type"] == "voice.window")["seconds"] == 5
+
+    engine.stt.text = "und jetzt das andere"  # type: ignore[attr-defined]
+    session._segmenter._prob.i = 0  # type: ignore[attr-defined]
+    await talk(session)  # im Fenster: keine Phrase nötig
+    assert heard == ["mach das Licht an", "und jetzt das andere"]
+
+
+async def test_only_the_phrase_gets_a_short_acknowledgement_and_opens_the_window() -> None:
+    engine, out = make_engine(FakeStt("Hey Cat")), Collector()
+
+    async def handle(*_: Any) -> Reply:
+        raise AssertionError("nur die Phrase: kein Dialog")
+
+    session = VoiceSession(engine, handle, out.send_json, out.send_audio, wake=WakeDetector())
+    await talk(session)
+    assert "voice.woke" in out.types() and "voice.window" in out.types()
+    assert engine.tts.spoken[0] in {"Ja?", "Ich höre.", "Ja, bitte?"}  # type: ignore[attr-defined]
+
+
+def test_browser_needs_the_phrase_but_a_satellite_does_not(tmp_path: Path) -> None:
+    app = voice_app(tmp_path, wake_required=True)
+    with TestClient(app) as c:
+        login(c)
+        assert c.get("/api/voice").json()["wake"]["required"] is True

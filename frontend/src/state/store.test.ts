@@ -13,6 +13,15 @@ describe("reducer", () => {
     expect(s.messages[0]).toMatchObject({ text: "Hallo", streaming: false });
   });
 
+  it("zeigt einen Füllsatz nur, solange die Antwort noch leer ist", () => {
+    let s = apply(initialState, { type: "chat.message", id: "a", role: "assistant", text: "", ts: 1 });
+    s = apply(s, { type: "chat.filler", id: "a", text: "Moment, ich schaue kurz nach." });
+    expect(s.messages[0]?.filler).toBe("Moment, ich schaue kurz nach.");
+    s = apply(s, { type: "chat.delta", id: "a", delta: "Offen." });
+    s = apply(s, { type: "chat.filler", id: "a", text: "Noch ein Satz." });
+    expect(s.messages[0]).toMatchObject({ text: "Offen.", filler: "Moment, ich schaue kurz nach." });
+  });
+
   it("ersetzt doppelt gesendete Nachrichten statt sie zu verdoppeln", () => {
     const event: ServerEvent = { type: "chat.message", id: "u", role: "user", text: "x", ts: 1 };
     const s = apply(apply(initialState, event), event);

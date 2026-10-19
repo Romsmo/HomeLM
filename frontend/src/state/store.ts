@@ -14,6 +14,8 @@ export interface ChatItem {
   text: string;
   ts: number;
   streaming: boolean;
+  /** Füllsatz, solange Cat noch nachdenkt ("Moment, ich schaue kurz nach"). */
+  filler?: string;
 }
 
 export interface WidgetState {
@@ -98,6 +100,13 @@ function applyServerEvent(state: CatState, event: ServerEvent): CatState {
         ...state,
         messages: state.messages.map((m) =>
           m.id === event.id ? { ...m, text: m.text + event.delta } : m,
+        ),
+      };
+    case "chat.filler":
+      return {
+        ...state,
+        messages: state.messages.map((m) =>
+          m.id === event.id && m.text === "" ? { ...m, filler: event.text } : m,
         ),
       };
     case "chat.done":

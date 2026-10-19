@@ -57,6 +57,7 @@ export interface StageItem {
 export type ServerEvent =
   | { type: "chat.message"; id: string; role: Role; text: string; ts: number }
   | { type: "chat.delta"; id: string; delta: string }
+  | { type: "chat.filler"; id: string; text: string }
   | { type: "chat.done"; id: string }
   | { type: "chat.clear" }
   | { type: "stage.show"; item: StageItem }
@@ -100,6 +101,7 @@ export type ClientEvent =
 const SERVER_TYPES = new Set<string>([
   "chat.message",
   "chat.delta",
+  "chat.filler",
   "chat.done",
   "chat.clear",
   "stage.show",

@@ -65,6 +65,8 @@ describe("ChatPanel", () => {
       unavailable: null,
       latency: null,
       error: null,
+      wakeHint: null,
+      windowOpen: false,
       toggle: vi.fn(),
       ...over,
     });

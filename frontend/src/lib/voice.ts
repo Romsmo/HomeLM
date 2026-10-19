@@ -12,6 +12,9 @@ export type VoiceEvent =
   | { type: "voice.reply"; text: string }
   | { type: "voice.empty" }
   | { type: "voice.timeout" }
+  | { type: "voice.ignored" }
+  | { type: "voice.woke" }
+  | { type: "voice.window"; seconds: number }
   | { type: "tts.start"; rate: number; channels: number; format: string }
   | { type: "tts.end"; expects_reply: boolean }
   | {
@@ -28,6 +31,7 @@ export type VoiceEvent =
 const TYPES = new Set([
   "voice.ready", "voice.state", "voice.transcript", "voice.reply", "voice.empty",
   "voice.timeout", "tts.start", "tts.end", "voice.latency", "error",
+  "voice.ignored", "voice.woke", "voice.window",
 ]); // prettier-ignore
 
 export function parseVoiceEvent(raw: string): VoiceEvent | null {

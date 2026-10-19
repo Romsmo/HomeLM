@@ -13,6 +13,7 @@ from cat.devices.allowlist import load_allowlist
 from cat.devices.confirm import ConfirmManager
 from cat.devices.service import DeviceService
 from cat.files import Inbox
+from cat.intents.fillers import FillerBank
 from cat.intents.learned import Learner
 from cat.memory.service import MemoryService
 from cat.plugins.pending import PendingPlugins
@@ -68,6 +69,8 @@ class AppState:
         self.sandbox = SandboxClient(settings.sandbox_dir)
         self.inbox = Inbox(settings.inbox_dir)
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
+        self.fillers = FillerBank(settings.fillers_file, settings.filler)
+        self.last_activity = 0.0  # time.monotonic() der letzten Nutzeranfrage
         self.learner = Learner(
             settings.learned_file, self.devices, settings.learn_after, settings.learn
         )

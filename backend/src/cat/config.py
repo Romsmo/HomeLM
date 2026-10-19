@@ -96,6 +96,21 @@ class Settings(BaseSettings):
     stt_threads: int = 4
     tts_voice: str = "de_DE-thorsten-medium"
     vad_silence_s: float = 1.1  # Pause bis zum Ende der Äußerung
+    # Aktivierungsphrasen für das Browser-Mikrofon (voice/wake.py): ohne sie antwortet Cat nicht.
+    wake_required: bool = True
+    wake_phrases: str = "hey cat,hallo cat,okay cat"  # kommagetrennt
+    wake_followup_s: float = 20.0  # nach einer Antwort braucht die nächste Äußerung keine Phrase
+    # Füllsätze beim Nachdenken (intents/fillers.py): nach so vielen Sekunden ohne Antwort
+    # sagt Cat etwas Passendes, danach alle `filler_repeat_s` Sekunden, höchstens dreimal.
+    filler: bool = True
+    filler_delay_s: float = 1.0
+    filler_repeat_s: float = 9.0
+    filler_generate: bool = True  # neue Sätze von selbst dazulernen (nur wenn Cat untätig ist)
+
+    @property
+    def fillers_file(self) -> Path:
+        return self.data_dir / "fillers.json"
+
     voice_nice: int = 10  # Rechenthreads mit niedriger Priorität, Nextcloud und Co. haben Vorrang
     # Lernen aus Wiederholungen (intents/learned.py): Kurzbefehle ohne Sprachmodell.
     learn: bool = True

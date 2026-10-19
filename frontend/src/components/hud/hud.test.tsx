@@ -11,6 +11,8 @@ const mic = (over: Partial<MicControl> = {}): MicControl => ({
   unavailable: null,
   latency: null,
   error: null,
+  wakeHint: null,
+  windowOpen: false,
   toggle: () => {},
   ...over,
 });
@@ -83,6 +85,21 @@ describe("Caption", () => {
     expect(screen.getByText("Nur mit HTTPS.")).toBeInTheDocument();
     rerender(<Caption messages={[]} mic={mic({ state: "ready" })} onOpenChat={() => {}} />);
     expect(screen.getByText(/sprich einfach/)).toBeInTheDocument();
+  });
+
+  it("nennt die Aktivierungsphrase und zeigt das offene Gesprächsfenster", () => {
+    const { rerender } = render(
+      <Caption messages={[]} mic={mic({ state: "ready", wakeHint: "hey cat" })} onOpenChat={() => {}} />,
+    );
+    expect(screen.getByText(/Sag „Hey Cat“ und deine Anfrage/)).toBeInTheDocument();
+    rerender(
+      <Caption
+        messages={[]}
+        mic={mic({ state: "ready", wakeHint: "hey cat", windowOpen: true })}
+        onOpenChat={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Ich höre weiter zu/)).toBeInTheDocument();
   });
 });
 

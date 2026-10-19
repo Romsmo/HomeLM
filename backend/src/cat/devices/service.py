@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -135,6 +136,16 @@ class DeviceService:
         benutzen, statt aus dem Kopf zu antworten. Die Wörter stammen aus dem Haus, nicht aus
         einer festen Liste."""
         return not self._stems.isdisjoint(_stems(text))
+
+    def topic_words(self, text: str) -> str | None:
+        """Das Gerätewort der Anfrage ("Markisen", "Roman") für Füllsätze wie "Ich schaue kurz
+        bei Markisen nach". Allgemeine Wörter wie "Zimmer" zählen nicht."""
+        for match in re.finditer(r"[A-Za-zÄÖÜäöüß]{4,}", text):
+            word = match.group(0)
+            stem = fold(word)[:5]
+            if stem in self._stems and stem not in _GENERIC_STEMS:
+                return word[0].upper() + word[1:]
+        return None
 
     def has_item(self, backend: str, item: str) -> bool:
         return (backend, item) in self._by_item
@@ -430,6 +441,9 @@ TYPE_STEMS = frozenset(
     "licht lampe leuch rolla rollo jalou schal dimme heizu therm tuer tuere schlo garag steck "
     "fenst gerae".split()
 )
+
+
+_GENERIC_STEMS = frozenset({"zimme", "haus", "gerae", "licht", "schal"})
 
 
 def _stems(text: str) -> set[str]:

@@ -22,10 +22,11 @@ def recognition_prompt(devices: DeviceService) -> str:
     "Kiche"). Whisper nutzt nur die letzten ~220 Zeichen, daher kurz halten."""
     rooms = sorted({s.room for s in devices.listed_specs})[:12]
     names = [s.name for s in devices.listed_specs][:12]
+    wake = " Hey Cat. Hallo Cat. Okay Cat."
     if not rooms:
-        return ""
+        return wake.strip()
     text = "Smart Home: " + ", ".join([*rooms, *names, "Licht", "Rollladen", "Heizung"]) + "."
-    return text[-PROMPT_LIMIT:]
+    return (text[-(PROMPT_LIMIT - len(wake)) :] + wake)[-PROMPT_LIMIT:]
 
 
 def voice_file(settings: Settings) -> Path:

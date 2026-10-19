@@ -7,6 +7,10 @@ export interface MicControl {
   unavailable: string | null;
   latency: string | null;
   error: string | null;
+  /** Aktivierungsphrase ("Hey Cat"), wenn der Browser sie verlangt, sonst null. */
+  wakeHint: string | null;
+  /** Gesprächsfenster offen: die nächste Äußerung braucht keine Phrase. */
+  windowOpen: boolean;
   toggle: () => void;
 }
 
@@ -14,6 +18,7 @@ interface VoiceInfo {
   enabled: boolean;
   ready: boolean;
   error: string | null;
+  wake?: { required: boolean; phrases: string[]; followup_s: number };
 }
 
 async function fetchInfo(): Promise<VoiceInfo | null> {
@@ -53,6 +58,8 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
   const [info, setInfo] = useState<VoiceInfo | null>(null);
   const [latency, setLatency] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [windowOpen, setWindowOpen] = useState(false);
+  const windowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const client = useRef<VoiceClient | null>(null);
   const autoTried = useRef(false);
   const manualStop = useRef(false);
@@ -76,6 +83,7 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
     () => () => {
       manualStop.current = true;
       if (retryTimer.current) clearTimeout(retryTimer.current);
+      if (windowTimer.current) clearTimeout(windowTimer.current);
       client.current?.stop();
     },
     [],
@@ -113,6 +121,11 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
       },
       onEvent: (e) => {
         if (e.type === "voice.latency") setLatency(formatLatency(e));
+        if (e.type === "voice.window") {
+          setWindowOpen(true);
+          if (windowTimer.current) clearTimeout(windowTimer.current);
+          windowTimer.current = setTimeout(() => setWindowOpen(false), e.seconds * 1000);
+        }
       },
       onError: (message) => {
         lastError.current = message;
@@ -161,5 +174,6 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
     };
   }, []);
 
-  return { state, unavailable, latency, error, toggle };
+  const wakeHint = info?.wake?.required ? (info.wake.phrases[0] ?? null) : null;
+  return { state, unavailable, latency, error, wakeHint, windowOpen: windowOpen && state !== "off", toggle };
 }

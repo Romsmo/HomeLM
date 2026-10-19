@@ -39,6 +39,14 @@ class ChatDelta(_Event):
     delta: str
 
 
+class ChatFiller(_Event):
+    """Füllsatz, solange Cat noch nachdenkt (wird beim ersten Wort der Antwort ersetzt)."""
+
+    type: Literal["chat.filler"] = "chat.filler"
+    id: str
+    text: str
+
+
 class ChatDone(_Event):
     type: Literal["chat.done"] = "chat.done"
     id: str
@@ -119,6 +127,7 @@ class ErrorEvent(_Event):
 ServerEvent = (
     ChatMessage
     | ChatDelta
+    | ChatFiller
     | ChatDone
     | ChatClear
     | StageShow

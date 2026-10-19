@@ -2,13 +2,18 @@ import type { MicControl } from "../../hooks/useVoice";
 import type { ChatItem } from "../../state/store";
 import MicButton from "../MicButton";
 
+function titleCase(text: string): string {
+  return text.replace(/(^|\s)(\p{L})/gu, (_all, space: string, letter: string) => space + letter.toUpperCase());
+}
+
 function micLine(mic: MicControl): string {
   if (mic.error) return mic.error;
   switch (mic.state) {
     case "connecting":
       return "Mikrofon verbindet …";
     case "ready":
-      return "Ich höre zu, sprich einfach";
+      if (mic.windowOpen) return "Ich höre weiter zu, sprich einfach";
+      return mic.wakeHint ? `Sag „${titleCase(mic.wakeHint)}“ und deine Anfrage` : "Ich höre zu, sprich einfach";
     case "listening":
       return "Ich höre …";
     case "thinking":
@@ -43,7 +48,7 @@ export default function Caption({
       >
         {lastUser && <p className="line-clamp-1 text-xs text-cyan-200/50">{lastUser.text}</p>}
         <p className="hud-text-glow line-clamp-3 min-h-[1.25rem] text-sm text-cyan-50" aria-live="polite">
-          {showCat ? (lastCat.text === "" && lastCat.streaming ? "…" : lastCat.text) : ""}
+          {showCat ? (lastCat.text === "" && lastCat.streaming ? (lastCat.filler ?? "…") : lastCat.text) : ""}
         </p>
         {!lastUser && !lastCat && (
           <p className="text-sm text-cyan-200/60">Sprich mit Cat oder klicke auf den Kern, um zu schreiben.</p>

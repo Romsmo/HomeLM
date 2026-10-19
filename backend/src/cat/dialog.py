@@ -4,11 +4,14 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from cat.claude.text import is_explicit_request, needs_claude
+from cat.intents.fillers import category_for
 from cat.state import AppState
 from cat.voice.pipeline import Reply
 from cat.ws.protocol import (
     ChatDelta,
     ChatDone,
+    ChatFiller,
     ChatMessage,
     ErrorEvent,
     VoiceState,
@@ -37,6 +40,37 @@ def _now() -> float:
     return time.time()
 
 
+async def _fillers(
+    state: AppState,
+    text: str,
+    assistant_id: str,
+    answered: asyncio.Event,
+    on_filler: OnDelta | None,
+) -> None:
+    """Sagt einen passenden Füllsatz, wenn die Antwort nach `filler_delay_s` noch fehlt, und bei
+    langem Warten noch bis zu zweimal einen weiteren (andere Art, damit es nicht doppelt klingt)."""
+    settings = state.settings
+    try:
+        await asyncio.wait_for(answered.wait(), settings.filler_delay_s)
+        return
+    except TimeoutError:
+        pass
+    claude = bool(settings.claude_url) and (is_explicit_request(text) or needs_claude(text))
+    category = category_for(text, device_related=state.devices.mentions_device(text), claude=claude)
+    topic = state.devices.topic_words(text)
+    for attempt in range(3):
+        phrase = state.fillers.pick(category if attempt == 0 else "think", topic)
+        if phrase:
+            await state.emit(ChatFiller(id=assistant_id, text=phrase))
+            if on_filler:
+                await on_filler(phrase)
+        try:
+            await asyncio.wait_for(answered.wait(), settings.filler_repeat_s)
+            return
+        except TimeoutError:
+            continue
+
+
 async def handle_user_text(
     state: AppState,
     text: str,
@@ -44,6 +78,7 @@ async def handle_user_text(
     *,
     spoken: bool = False,
     on_delta: OnDelta | None = None,
+    on_filler: OnDelta | None = None,
     manage_voice_state: bool = True,
     wait: bool = False,
 ) -> Reply:
@@ -58,6 +93,7 @@ async def handle_user_text(
         await state.emit(ErrorEvent(message="Cat antwortet noch, bitte kurz warten."))
         return Reply("")
     started = time.perf_counter()
+    state.last_activity = time.monotonic()
     try:
         # Sprache wartet, bis ein laufendes Gespräch (z. B. ein anderer Satellit) fertig ist.
         await asyncio.wait_for(state.run_lock.acquire(), timeout=LOCK_WAIT_S if wait else None)
@@ -91,11 +127,18 @@ async def handle_user_text(
         await state.emit(assistant)
         parts: list[str] = []
         first_output: float | None = None
+        answered = asyncio.Event()
+        filler_task = (
+            asyncio.create_task(_fillers(state, text, assistant_id, answered, on_filler))
+            if state.fillers.enabled
+            else None
+        )
         try:
             responder = state.responder or EchoResponder()
             async for delta in responder.reply(list(state.chat), spoken=spoken, room=room):
                 if first_output is None:
                     first_output = time.perf_counter() - started
+                    answered.set()
                 parts.append(delta)
                 await state.emit(ChatDelta(id=assistant_id, delta=delta))
                 if on_delta:
@@ -104,6 +147,10 @@ async def handle_user_text(
             log.exception("Antwort fehlgeschlagen")
             await state.emit(ErrorEvent(message="Die Antwort ist fehlgeschlagen. Details im Log."))
         finally:
+            answered.set()
+            if filler_task is not None:
+                filler_task.cancel()
+                await asyncio.gather(filler_task, return_exceptions=True)
             assistant.text = "".join(parts)
             assistant.tooled = user.tooled = state.turn_tooled
             log.info(

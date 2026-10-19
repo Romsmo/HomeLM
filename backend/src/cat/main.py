@@ -1,15 +1,17 @@
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from cat import __version__, api_files, api_learned, auth
+from cat import __version__, api_files, api_fillers, api_learned, auth
 from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
-from cat.llm.base import LLMProvider
+from cat.intents.fillers import FillerWorkshop
+from cat.llm.base import LLMProvider, TextDelta
 from cat.llm.litellm_provider import LiteLLMProvider
 from cat.memory.sessions import summarize_old_sessions
 from cat.plugins.manager import PluginManager
@@ -50,6 +52,32 @@ def _start_summaries(state: AppState) -> "asyncio.Task[int] | None":
     return asyncio.create_task(run())
 
 
+def _start_fillers(state: AppState) -> "asyncio.Task[None] | None":
+    """Füllsätze von selbst erweitern, wenn Cat untätig ist (nur mit lokalem Modell)."""
+    settings = state.settings
+    if not (settings.filler and settings.filler_generate and settings.local_model):
+        return None
+    if settings.responder != "agent":
+        return None
+    provider = build_local_provider(state)
+
+    async def generate(prompt: str) -> str:
+        parts = []
+        async for event in provider.stream(
+            "Du schreibst kurze, natürliche deutsche Sätze.",
+            [{"role": "user", "content": prompt}],
+            [],
+        ):
+            if isinstance(event, TextDelta):
+                parts.append(event.text)
+        return "".join(parts)
+
+    def idle() -> bool:
+        return not state.run_lock.locked() and time.monotonic() - state.last_activity > 90
+
+    return asyncio.create_task(FillerWorkshop(state.fillers, generate, idle).run())
+
+
 def _start_voice(state: AppState) -> "asyncio.Task[None] | None":
     """Lädt die Sprachmodelle im Hintergrund (Cat ist sofort erreichbar, Sprache folgt)."""
     if not state.settings.voice or state.voice is None:
@@ -81,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await plugins.start()
         summary_task = _start_summaries(state)
         voice_task = _start_voice(state)
+        filler_task = _start_fillers(state)
         warm = getattr(state.responder, "warm", None)  # lokales Modell vorladen
         warm_task = asyncio.create_task(warm()) if warm else None
         try:
@@ -92,6 +121,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 summary_task.cancel()
             if voice_task:
                 voice_task.cancel()
+            if filler_task:
+                filler_task.cancel()
             await plugins.stop()
 
     app = FastAPI(title="Cat", version=__version__, lifespan=lifespan)
@@ -108,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(api_files.router)
     app.include_router(api_learned.router)
+    app.include_router(api_fillers.router)
     app.include_router(endpoint.router)
     app.include_router(voice_ws.router)
 

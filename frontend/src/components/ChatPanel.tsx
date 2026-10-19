@@ -23,7 +23,7 @@ function Bubble({ message }: { message: ChatItem }) {
           <p className="whitespace-pre-wrap">{message.text}</p>
         ) : message.text === "" && message.streaming ? (
           <span className="text-slate-400" aria-label="Cat schreibt">
-            …
+            {message.filler ?? "…"}
           </span>
         ) : (
           <div className="prose-cat">
