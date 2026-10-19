@@ -1,13 +1,13 @@
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from cat import __version__, api_files, api_fillers, api_learned, auth
+from cat import __version__, api_files, api_fillers, api_learned, api_memory, auth
 from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
 from cat.intents.fillers import FillerWorkshop
@@ -52,19 +52,14 @@ def _start_summaries(state: AppState) -> "asyncio.Task[int] | None":
     return asyncio.create_task(run())
 
 
-def _start_fillers(state: AppState) -> "asyncio.Task[None] | None":
-    """Füllsätze von selbst erweitern, wenn Cat untätig ist (nur mit lokalem Modell)."""
-    settings = state.settings
-    if not (settings.filler and settings.filler_generate and settings.local_model):
-        return None
-    if settings.responder != "agent":
-        return None
+def _local_generate(state: AppState) -> "Callable[[str], Awaitable[str]]":
+    """Kurze Texte vom lokalen Modell (für Hintergrundaufgaben, ohne Werkzeuge)."""
     provider = build_local_provider(state)
 
     async def generate(prompt: str) -> str:
         parts = []
         async for event in provider.stream(
-            "Du schreibst kurze, natürliche deutsche Sätze.",
+            "Du schreibst kurze, genaue Texte auf Deutsch und hältst dich an das verlangte Format.",
             [{"role": "user", "content": prompt}],
             [],
         ):
@@ -72,10 +67,36 @@ def _start_fillers(state: AppState) -> "asyncio.Task[None] | None":
                 parts.append(event.text)
         return "".join(parts)
 
+    return generate
+
+
+def _start_reflection(state: AppState) -> "asyncio.Task[None] | None":
+    """Dauerhafte Fakten aus Gesprächen merken, wenn Cat untätig ist (nur mit lokalem Modell)."""
+    settings = state.settings
+    if not (settings.reflect and settings.local_model and settings.responder == "agent"):
+        return None
+    return asyncio.create_task(
+        state.reflector.run(
+            _local_generate(state),
+            state.save_fact,
+            lambda: state.last_activity,
+            state.run_lock.locked,
+        )
+    )
+
+
+def _start_fillers(state: AppState) -> "asyncio.Task[None] | None":
+    """Füllsätze von selbst erweitern, wenn Cat untätig ist (nur mit lokalem Modell)."""
+    settings = state.settings
+    if not (settings.filler and settings.filler_generate and settings.local_model):
+        return None
+    if settings.responder != "agent":
+        return None
+
     def idle() -> bool:
         return not state.run_lock.locked() and time.monotonic() - state.last_activity > 90
 
-    return asyncio.create_task(FillerWorkshop(state.fillers, generate, idle).run())
+    return asyncio.create_task(FillerWorkshop(state.fillers, _local_generate(state), idle).run())
 
 
 def _start_voice(state: AppState) -> "asyncio.Task[None] | None":
@@ -110,6 +131,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summary_task = _start_summaries(state)
         voice_task = _start_voice(state)
         filler_task = _start_fillers(state)
+        await asyncio.to_thread(state.export_learned)
+        reflect_task = _start_reflection(state)
         warm = getattr(state.responder, "warm", None)  # lokales Modell vorladen
         warm_task = asyncio.create_task(warm()) if warm else None
         try:
@@ -123,6 +146,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 voice_task.cancel()
             if filler_task:
                 filler_task.cancel()
+            if reflect_task:
+                reflect_task.cancel()
             await plugins.stop()
 
     app = FastAPI(title="Cat", version=__version__, lifespan=lifespan)
@@ -140,6 +165,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_files.router)
     app.include_router(api_learned.router)
     app.include_router(api_fillers.router)
+    app.include_router(api_memory.router)
     app.include_router(endpoint.router)
     app.include_router(voice_ws.router)
 

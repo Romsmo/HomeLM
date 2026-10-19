@@ -7,7 +7,7 @@ from cat.devices.commands import DeviceError
 from cat.devices.models import DeviceInfo
 from cat.devices.service import DeviceService
 from cat.intents.replies import confirm_text, state_line
-from cat.intents.text import tokenize
+from cat.intents.text import fold, tokenize
 from cat.ws.protocol import StageShow
 
 LIST_LIMIT = 25
@@ -95,6 +95,11 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         words = [t for t in tokenize(query) if len(t) >= 4 and t not in _FILLER]
         if words and all(t[:5] in _SHUTTER_STEMS for t in words):
             infos = [i for i in service.snapshot(room or None) if i.type == "shutter"]
+            stems = {t[:5] for t in words}
+            if stems == {"marki"}:  # nur Markisen
+                infos = [i for i in infos if "marki" in fold(f"{i.name} {i.room}")]
+            elif "marki" not in stems:  # Rollos, Rollläden, Jalousien: ohne Markisen
+                infos = [i for i in infos if "marki" not in fold(f"{i.name} {i.room}")]
         elif query:
             infos = service.search(query, 60)
             if room:

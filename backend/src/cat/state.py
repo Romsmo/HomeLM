@@ -15,6 +15,7 @@ from cat.devices.service import DeviceService
 from cat.files import Inbox
 from cat.intents.fillers import FillerBank
 from cat.intents.learned import Learner
+from cat.memory.reflect import Fact, Reflector
 from cat.memory.service import MemoryService
 from cat.plugins.pending import PendingPlugins
 from cat.sandbox.client import SandboxClient
@@ -70,6 +71,7 @@ class AppState:
         self.inbox = Inbox(settings.inbox_dir)
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fillers = FillerBank(settings.fillers_file, settings.filler)
+        self.reflector = Reflector(settings.reflect_idle_s)
         self.last_activity = 0.0  # time.monotonic() der letzten Nutzeranfrage
         self.learner = Learner(
             settings.learned_file, self.devices, settings.learn_after, settings.learn
@@ -81,6 +83,38 @@ class AppState:
         """Vom Fallback-Anbieter aufgerufen, wenn das antwortende Modell wechselt."""
         self.provider_state = ProviderState(name=name, offline=offline)
         await self.emit(self.provider_state)
+
+    def export_learned(self) -> None:
+        """Gelernte Kurzbefehle als Notiz ins Gedächtnis (für Obsidian und Claude lesbar)."""
+        rows = [r for r in self.learner.listing() if r["active"]]
+        if not rows:
+            return
+        body = "\n".join(f"- „{r['phrase']}“: {r['does']}" for r in rows)
+        try:
+            self.memory.store.delete("gelerntes/kurzbefehle.md")
+            self.memory.store.write(
+                "Kurzbefehle",
+                "Diese Formulierungen führt Cat sofort ohne Sprachmodell aus:\n" + body,
+                "gelerntes",
+                ["auto", "kurzbefehle"],
+            )
+            self.memory.index.sync()
+        except Exception:
+            log.warning("Kurzbefehle konnten nicht ins Gedächtnis geschrieben werden")
+
+    async def save_fact(self, fact: Fact, speaker: str | None = None) -> bool:
+        """Einen selbst erkannten Fakt als Notiz ablegen und dem Nutzer sagen, was gemerkt wurde."""
+        tags = ["auto", *([speaker] if speaker else [])]
+        await asyncio.to_thread(self.memory.remember, fact.title, fact.text, fact.topic, tags)
+        note = ChatMessage(
+            id=uuid.uuid4().hex,
+            role="system",
+            text=f'Gemerkt: {fact.text} Sag "vergiss {fact.title}", wenn das nicht stimmt.',
+            ts=time.time(),
+        )
+        self.chat.append(note)
+        await self.emit(note)
+        return True
 
     async def learn_from(
         self,
@@ -108,6 +142,7 @@ class AppState:
         )
         self.chat.append(note)
         await self.emit(note)
+        await asyncio.to_thread(self.export_learned)
 
     async def emit(self, event: ServerEvent) -> None:
         await self.hub.broadcast(event)

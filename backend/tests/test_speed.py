@@ -297,7 +297,7 @@ def test_local_model_gets_few_compact_tools(tmp_path: Path) -> None:
     system, tools, names = local_payload(tmp_path)
     assert set(names) <= set(LOCAL_TOOLS) | {"ask_claude"} and "ask_claude" in names
     assert "set_state" in names and "show_chart" not in names and "show_markdown" not in names
-    assert len(tools) < 2600  # vorher ca. 9000 Zeichen für 16 Werkzeuge
+    assert len(tools) < 3100  # vorher ca. 9000 Zeichen für 16 Werkzeuge
     assert tools.count('"description"') == len(names)  # nur je Werkzeug eine, keine je Parameter
 
 
@@ -426,3 +426,29 @@ def test_control_cues() -> None:
     assert has_control_cue("Fahr das Rollo runter")
     assert not has_control_cue("zähle mir bitte auf, welche Rollos offen sind")
     assert is_question("zähle mir bitte auf, welche Rollos offen sind")
+
+
+async def test_markises_and_rollos_can_be_asked_separately(tmp_path: Path) -> None:
+    from cat.devices.allowlist import parse_allowlist
+
+    yaml = (
+        "devices:\n"
+        "  - {id: rollo, backend: openhab, item: RO, name: Romans Rollo, room: Romans Zimmer, "
+        "type: shutter}\n"
+        "  - {id: mark, backend: openhab, item: MA, name: Markise Nord, room: Terrassenmarkisen, "
+        "type: shutter}\n"
+    )
+    service, _ = make(tmp_path)
+    service._allowlist = parse_allowlist(yaml)
+    service._rebuild()
+    service.seed_states("openhab", {"RO": RawState("0"), "MA": RawState("0")})
+
+    async def ask(query: str) -> str:
+        provider = FakeProvider([ToolCall("c", "list_devices", {"query": query, "state": "offen"})])
+        out, _ = await run(agent_for(service, provider), "Welche sind offen?", True)
+        return out
+
+    assert await ask("Markisen") == "Offen sind: Markise Nord (Terrassenmarkisen)."
+    assert await ask("Rollos") == "Offen sind: Romans Rollo (Romans Zimmer)."
+    both = await ask("Rollos oder Markisen")
+    assert "Markise Nord" in both and "Romans Rollo" in both

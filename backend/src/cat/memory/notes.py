@@ -112,6 +112,14 @@ class NoteStore:
             return None
         return parse_note(relative, path.read_text(encoding="utf-8"))
 
+    def delete(self, relative: str) -> bool:
+        """Notiz löschen. Nur Dateien unter data/memory (Pfadschutz wie beim Lesen)."""
+        path = self._resolve(relative)
+        if not path.is_file() or path.suffix != ".md":
+            return False
+        path.unlink()
+        return True
+
     def files(self) -> list[Path]:
         if not self.root.is_dir():
             return []

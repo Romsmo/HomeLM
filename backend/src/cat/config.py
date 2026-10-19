@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     filler_delay_s: float = 1.0
     filler_repeat_s: float = 9.0
     filler_generate: bool = True  # neue Sätze von selbst dazulernen (nur wenn Cat untätig ist)
+    # Second Brain (memory/): dauerhafte Fakten aus Gesprächen selbst merken (nur wenn Cat untätig
+    # ist) und Antworten von Claude auf zeitlose Fragen als Wissen ablegen.
+    reflect: bool = True
+    reflect_idle_s: float = 60.0
+    knowledge_cache: bool = True
 
     @property
     def fillers_file(self) -> Path:

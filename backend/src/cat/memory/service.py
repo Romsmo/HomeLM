@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from cat.agent.tools import Tool, ToolContext, ToolError
+from cat.memory import knowledge
 from cat.memory.index import Hit, NoteIndex
-from cat.memory.notes import NoteError, NoteStore
+from cat.memory.notes import Note, NoteError, NoteStore, slug
 from cat.memory.sessions import SessionLog
 
 log = logging.getLogger("cat.memory")
@@ -52,6 +53,19 @@ class MemoryService:
             "Frage passen, und erfinde nichts dazu):\n" + "\n".join(lines)
         )
 
+    def cached_answer(self, question: str) -> knowledge.Cached | None:
+        """Hat Claude diese (zeitlose) Frage schon einmal beantwortet?"""
+        try:
+            for hit in self.index.search(question, 3, topic=knowledge.TOPIC):
+                if (cached := knowledge.matches(question, hit.note)) is not None:
+                    return cached
+        except Exception:
+            log.exception("Wissens-Cache fehlgeschlagen")
+        return None
+
+    def list_notes(self) -> list[Note]:
+        return sorted(self.store.all(), key=lambda n: (n.topic, n.title))
+
     # --- Schreiben ---
 
     def remember(
@@ -65,6 +79,44 @@ class MemoryService:
         note = self.store.write(title, text, topic, tags)
         self.index.sync()
         return note.path
+
+    def remember_answer(self, question: str, answer: str, has_pages: bool = False) -> bool:
+        """Antwort von Claude als Wissens-Notiz ablegen (nur zeitlose, allgemeine Fragen)."""
+        if not knowledge.cacheable(question, answer, has_pages):
+            return False
+        title = knowledge.title_of(question)
+        try:
+            self.store.delete(f"{knowledge.TOPIC}/{slug(title)}.md")  # neue Antwort ersetzt alte
+            self.store.write(
+                title,
+                f"Frage: {question.strip()}\n\nAntwort: {answer.strip()}",
+                knowledge.TOPIC,
+                ["claude", "wissen"],
+            )
+            self.index.sync()
+        except NoteError:
+            return False
+        return True
+
+    def forget(self, query: str) -> str:
+        """Eine Notiz anhand von Stichwörtern löschen, wenn eindeutig. Gibt eine Meldung zurück."""
+        wanted = knowledge.stems(query)
+        if not wanted:
+            return "Sag mir bitte, was ich vergessen soll."
+        candidates = [
+            h.note
+            for h in self.index.search(query, 8)
+            if wanted & (knowledge.stems(h.note.title) | knowledge.stems(h.note.body[:200]))
+        ]
+        if not candidates:
+            return "Dazu habe ich keine Notiz gefunden."
+        if len(candidates) > 1:
+            names = "; ".join(f"{n.title} ({n.topic})" for n in candidates[:4])
+            return f"Das passt zu mehreren Notizen: {names}. Welche soll ich vergessen?"
+        note = candidates[0]
+        self.store.delete(note.path)
+        self.index.sync()
+        return f"Vergessen: {note.title}."
 
 
 def _shorten(text: str, limit: int) -> str:
@@ -116,6 +168,12 @@ def build_memory_tools(memory: MemoryService) -> list[Tool]:
             f"{n.topic} | {n.title} | {n.date} | {', '.join(n.tags)}" for n in notes[:100]
         )
 
+    async def memory_forget(args: dict[str, Any], _: ToolContext) -> str:
+        query = args.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise ToolError("Parameter 'query' fehlt.")
+        return await asyncio.to_thread(memory.forget, query)
+
     return [
         Tool(
             name="memory_search",
@@ -153,6 +211,20 @@ def build_memory_tools(memory: MemoryService) -> list[Tool]:
                 "required": ["title", "text"],
             },
             handler=memory_write,
+        ),
+        Tool(
+            name="memory_forget",
+            description=(
+                "Vergisst eine gespeicherte Notiz auf Wunsch des Nutzers ('vergiss, dass ...'). "
+                "Löscht nur, wenn genau eine Notiz passt."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Stichwörter."}},
+                "required": ["query"],
+            },
+            handler=memory_forget,
+            risk="medium",
         ),
         Tool(
             name="memory_list",

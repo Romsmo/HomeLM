@@ -61,6 +61,7 @@ async def _fillers(
     for attempt in range(3):
         phrase = state.fillers.pick(category if attempt == 0 else "think", topic)
         if phrase:
+            log.info("Füllsatz (%s, Versuch %d): %s", category, attempt + 1, phrase)
             await state.emit(ChatFiller(id=assistant_id, text=phrase))
             if on_filler:
                 await on_filler(phrase)
@@ -152,6 +153,8 @@ async def handle_user_text(
                 filler_task.cancel()
                 await asyncio.gather(filler_task, return_exceptions=True)
             assistant.text = "".join(parts)
+            if state.settings.reflect and parts and not state.turn_tooled:
+                state.reflector.observe(text, None, state.devices.mentions_device(text))
             assistant.tooled = user.tooled = state.turn_tooled
             log.info(
                 "Dialog: vorher %.2f s, Lernprüfung %.2f s, Antwort %.1f s (erste Ausgabe %s)",

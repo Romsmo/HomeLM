@@ -218,6 +218,19 @@ class RoutedResponder:
             yield self._refusal(escalation, reason)
             return
         question = next((m.text for m in reversed(history) if m.role == "user"), "")
+        settings = self._state.settings
+        if settings.knowledge_cache and escalation.reason != "explicit":
+            cached = await asyncio.to_thread(self._state.memory.cached_answer, question)
+            if cached is not None:  # schon einmal geklärt: sofort, ohne Claude und ohne Kontingent
+                log.info("Wissens-Cache: Antwort vom %s", cached.date)
+                for part in chunk(cached.answer):
+                    yield part
+                if not spoken:
+                    yield (
+                        f"\n\n*Aus dem Gedächtnis (Antwort von Claude vom {cached.date}). "
+                        "Sag „frag Claude nochmal“ für eine frische Antwort.*"
+                    )
+                return
         memory = await asyncio.to_thread(self._state.memory.context_for, question)
         # Das lokale Modell darf die Frage präzisieren; bei Ausfall steht dort nur der Fehlertext.
         note = escalation.question if escalation.reason == "model" else ""
@@ -237,6 +250,8 @@ class RoutedResponder:
             return
         text, pages = split_html(result.text)
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
+        if settings.knowledge_cache:
+            await asyncio.to_thread(self._state.memory.remember_answer, question, text, bool(pages))
         for title, html in pages:
             try:
                 await show_html({"title": title, "html": html}, ctx)
