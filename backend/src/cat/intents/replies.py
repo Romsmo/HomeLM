@@ -25,7 +25,11 @@ def confirm_text(spec: DeviceSpec, command: str) -> str:
     if spec.type == "thermostat":
         return f"Okay, {n} ist auf {_num(command)} Grad gestellt."
     if spec.type == "shutter":
-        return f"Okay, {n} ist auf {_num(command)} Prozent zu."
+        if command.replace(".0", "") == "0":
+            return f"Okay, {n} ist offen."
+        if command.replace(".0", "") == "100":
+            return f"Okay, {n} ist zu."
+        return f"Okay, {n} ist zu {_num(command)} Prozent geschlossen."
     return f"Okay, {n} steht auf {_num(command)} Prozent."
 
 

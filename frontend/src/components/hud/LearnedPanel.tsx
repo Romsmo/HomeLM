@@ -3,10 +3,11 @@ import type { Brain } from "../../hooks/useBrain";
 import type { LearnedRow } from "../../lib/learned";
 import { HudPanel } from "./Hud";
 
-type Tab = "learned" | "notes" | "people" | "fillers";
+type Tab = "learned" | "terms" | "notes" | "people" | "fillers";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "learned", label: "Kurzbefehle" },
+  { id: "terms", label: "Begriffe" },
   { id: "notes", label: "Notizen" },
   { id: "people", label: "Personen" },
   { id: "fillers", label: "Füllsätze" },
@@ -176,6 +177,25 @@ export default function LearnedPanel({
                   onClick={() => ask(r.id, () => onForget(r.id))}
                 />
               </li>
+            ))}
+          </ul>
+        ))}
+      {brain && tab === "terms" &&
+        (brain.terms.length === 0 ? (
+          <Empty>
+            Noch keine Begriffe. Erkläre mir zum Beispiel: „Mit Dachrollos meine ich Romans Rollo und
+            Marius Rollo“.
+          </Empty>
+        ) : (
+          <ul className="grid gap-1.5 text-sm" aria-label="Erklärte Begriffe">
+            {brain.terms.map((t) => (
+              <Row key={t.term} title={t.term} sub={`${t.devices.join(", ")} · ${t.uses}× genutzt`}>
+                <ForgetButton
+                  label={`Begriff „${t.term}“`}
+                  active={confirming === `t${t.term}`}
+                  onClick={() => ask(`t${t.term}`, () => brain.removeTerm(t.term))}
+                />
+              </Row>
             ))}
           </ul>
         ))}

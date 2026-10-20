@@ -19,6 +19,7 @@ from cat.voice.speaker import cosine
 log = logging.getLogger("cat.people")
 
 MAX_EMBEDDINGS = 8
+MAX_NEGATIVES = 6
 MAX_PEOPLE = 30
 
 
@@ -30,6 +31,8 @@ class Person:
     last_seen: float = 0.0
     consent_voice: bool = False
     embeddings: list[list[float]] = field(default_factory=list)
+    # Stimmen, die dieser Person ausdrücklich NICHT gehören ("Nein, ich bin Roman").
+    negatives: list[list[float]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -39,6 +42,7 @@ class Person:
             "last_seen": self.last_seen,
             "consent_voice": self.consent_voice,
             "embeddings": self.embeddings,
+            "negatives": self.negatives,
         }
 
     @classmethod
@@ -50,6 +54,7 @@ class Person:
             last_seen=float(raw.get("last_seen", 0.0)),
             consent_voice=bool(raw.get("consent_voice", False)),
             embeddings=[[float(x) for x in e] for e in raw.get("embeddings", [])],
+            negatives=[[float(x) for x in e] for e in raw.get("negatives", [])],
         )
 
     def public(self) -> dict[str, Any]:
@@ -66,7 +71,15 @@ class Person:
     def centroid(self) -> list[float] | None:
         if not self.embeddings:
             return None
-        mean = np.mean(np.asarray(self.embeddings, dtype=np.float32), axis=0)
+        vectors = np.asarray(self.embeddings, dtype=np.float32)
+        if len(vectors) >= 5:  # Ausreißer (z. B. eine fremde Stimme im Gespräch) nicht mitteln
+            first = vectors.mean(axis=0)
+            first /= np.linalg.norm(first) or 1.0
+            sims = vectors @ first / np.linalg.norm(vectors, axis=1)
+            keep = sims >= sims.mean() - 0.12
+            if keep.sum() >= 3:
+                vectors = vectors[keep]
+        mean = np.mean(vectors, axis=0)
         norm = float(np.linalg.norm(mean))
         return [float(x) for x in mean / norm] if norm else None
 
@@ -159,12 +172,23 @@ class PeopleStore:
 
     # --- Stimme erkennen ---
 
+    def add_negative(self, person: Person, embedding: list[float]) -> None:
+        """Diese Stimme gehört NICHT zu `person` (der Nutzer hat "Nein" gesagt)."""
+        person.negatives.append(embedding)
+        del person.negatives[:-MAX_NEGATIVES]
+        self.save()
+
     def match(self, embedding: list[float]) -> Match:
         scored: list[tuple[float, Person]] = []
         for person in self._people.values():
             center = person.centroid()
             if center is not None and person.consent_voice:
-                scored.append((cosine(embedding, center), person))
+                score = cosine(embedding, center)
+                if person.negatives and max(cosine(embedding, n) for n in person.negatives) >= min(
+                    score, 0.8
+                ):
+                    score = min(score, 0.40)  # diese Stimme wurde als "nicht diese Person" gemeldet
+                scored.append((score, person))
         scored.sort(key=lambda s: -s[0])
         if not scored:
             return Match(None, 0.0, 0.0)

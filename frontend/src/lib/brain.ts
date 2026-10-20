@@ -79,3 +79,16 @@ export async function listFillers(): Promise<FillerRow[]> {
 }
 
 export const deleteFiller = (text: string) => del(`/api/fillers?text=${encodeURIComponent(text)}`);
+
+export interface TermRow {
+  term: string;
+  devices: string[];
+  uses: number;
+}
+
+export async function listTerms(): Promise<TermRow[]> {
+  const data = await getJson("/api/lexicon");
+  return Array.isArray(data) ? (data as TermRow[]) : [];
+}
+
+export const deleteTerm = (term: string) => del(`/api/lexicon?term=${encodeURIComponent(term)}`);

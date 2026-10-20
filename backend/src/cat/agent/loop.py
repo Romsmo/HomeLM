@@ -8,7 +8,12 @@ from collections.abc import AsyncIterator, Callable
 from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
 from cat.audit import AuditLog
 from cat.intents.claims import claims_action
-from cat.intents.text import has_control_cue, is_question, power_conflict
+from cat.intents.text import (
+    has_control_cue,
+    is_question,
+    negated_or_reported,
+    power_conflict,
+)
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
@@ -23,6 +28,10 @@ CORRECTION = (
     "Hinweis des Systems: Du hast kein Werkzeug aufgerufen, deshalb ist nichts passiert und "
     "deine Antwort ist unbelegt. Rufe jetzt das passende Werkzeug auf (set_state zum Schalten, "
     "get_state oder list_devices zum Nachsehen) oder sag ehrlich, dass du es nicht kannst."
+)
+NOT_A_COMMAND = (
+    "Das habe ich nicht als Schaltbefehl verstanden, deshalb habe ich nichts geschaltet. "
+    "Sag es mir bitte als Befehl, zum Beispiel „Mach Romans Rollo auf“."
 )
 UNVERIFIED = (
     "Das habe ich nicht ausgeführt, weil ich dafür kein Gerät angesprochen habe. "
@@ -83,6 +92,7 @@ class Agent:
         # Befehl (keine Frage) über Geräte: erst erledigt, wenn set_state lief. Kleine Modelle
         # lesen gern erst den Zustand und kündigen dann nur an ("Ich schalte es aus").
         asked = _last_user_text(history)
+        ctx.user_text = asked
         command = ctx.device_related and not is_question(asked) and has_control_cue(asked)
         for _ in range(self._max_steps):
             step_text: list[str] = []
@@ -183,6 +193,12 @@ class Agent:
                 result = await self._execute(call, ctx, user_text)
                 ok_count += ctx.trace[-1].ok
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+            if ctx.clarify:
+                yield ("\n\n" if wrote_text else "") + ctx.clarify
+                return
+            if ctx.blocked:
+                yield ("\n\n" if wrote_text else "") + NOT_A_COMMAND
+                return
             fresh = ctx.final_replies[ready:]
             log.info(
                 "Zug: Modell %.1f s, Werkzeuge %.1f s (%s) Ausgabe %.60r",
@@ -224,6 +240,11 @@ class Agent:
             return f"Fehler: Das Werkzeug '{call.name}' gibt es nicht.", False
         if call.arguments is None:
             return "Fehler: Die Argumente sind kein gültiges JSON-Objekt.", False
+        if call.name == "set_state" and user_text:
+            if not has_control_cue(user_text) or negated_or_reported(user_text):
+                # Ein Name ("Roman"), eine Erklärung oder ein Rückblick ist kein Schaltbefehl.
+                ctx.blocked = True
+                return "Fehler: Das war kein Schaltbefehl. Nichts wurde geschaltet.", False
         if call.name == "set_state" and (
             word := power_conflict(user_text, str(call.arguments.get("command", "")).lower())
         ):

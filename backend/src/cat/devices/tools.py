@@ -3,11 +3,11 @@
 from typing import Any
 
 from cat.agent.tools import Tool, ToolContext, ToolError
-from cat.devices.commands import DeviceError
+from cat.devices.commands import DeviceError, UnknownDevice
 from cat.devices.models import DeviceInfo
 from cat.devices.service import DeviceService
 from cat.intents.replies import confirm_text, state_line
-from cat.intents.text import fold, tokenize
+from cat.intents.text import fold, shutter_conflict, tokenize
 from cat.ws.protocol import StageShow
 
 LIST_LIMIT = 25
@@ -79,6 +79,18 @@ def format_device(info: DeviceInfo) -> str:
     )
 
 
+def _unknown_text(exc: UnknownDevice) -> str:
+    """Statt zu raten: sagen, dass der Begriff unbekannt ist, und anbieten, ihn zu erklären."""
+    near = exc.near[:2]
+    example = (
+        f"Mit {exc.ref} meine ich {' und '.join(near)}" if near else f"Mit {exc.ref} meine ich ..."
+    )
+    return (
+        f"„{exc.ref}“ kenne ich nicht, deshalb habe ich nichts gemacht. "
+        f"Erkläre es mir, zum Beispiel: „{example}“."
+    )
+
+
 def build_device_tools(service: DeviceService) -> list[Tool]:
     async def list_devices(args: dict[str, Any], ctx: ToolContext) -> str:
         room = args.get("room")
@@ -92,8 +104,12 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 raise ToolError("state: an, aus, offen oder zu.")
         else:
             wanted = None
+        term = service.lexicon.lookup(query) if service.lexicon is not None and query else None
         words = [t for t in tokenize(query) if len(t) >= 4 and t not in _FILLER]
-        if words and all(t[:5] in _SHUTTER_STEMS for t in words):
+        if term is not None:
+            known = {i.id: i for i in service.snapshot(include_unlisted=True)}
+            infos = [known[i] for i in term.ids if i in known]
+        elif words and all(t[:5] in _SHUTTER_STEMS for t in words):
             infos = [i for i in service.snapshot(room or None) if i.type == "shutter"]
             stems = {t[:5] for t in words}
             if stems == {"marki"}:  # nur Markisen
@@ -162,6 +178,9 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
             raise ToolError("Parameter 'device' fehlt.")
         try:
             info = await service.get_state(ref)
+        except UnknownDevice as exc:
+            ctx.clarify = _unknown_text(exc)
+            raise ToolError(str(exc)) from exc
         except DeviceError as exc:
             raise ToolError(str(exc)) from exc
         final = state_line(service.resolve(info.id), info)
@@ -183,11 +202,35 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         if not isinstance(ref, str) or not isinstance(command, str):
             raise ToolError("Parameter 'device' und 'command' werden benötigt.")
         try:
-            result = await service.command_detailed(ref, command, source="agent")
+            targets = service.resolve_many(ref)
+        except UnknownDevice as exc:
+            ctx.clarify = _unknown_text(exc)
+            raise ToolError(str(exc)) from exc
         except DeviceError as exc:
             raise ToolError(str(exc)) from exc
-        ctx.final_replies.append(confirm_text(result.spec, result.command))
-        return result.text
+        if any(t.type == "shutter" for t in targets) and (
+            word := shutter_conflict(ctx.user_text, command)
+        ):
+            raise ToolError(
+                f'Der Nutzer will {word}, du hast aber "{command}" gesendet (up oder 0 Prozent = '
+                "öffnen, down oder 100 Prozent = schließen). Nichts wurde geschaltet. Rufe "
+                "set_state mit dem richtigen Befehl noch einmal auf."
+            )
+        confirmations: list[str] = []
+        reports: list[str] = []
+        errors: list[str] = []
+        for spec in targets:
+            try:
+                result = await service.command_detailed(spec.id, command, source="agent")
+            except DeviceError as exc:
+                errors.append(str(exc))
+                continue
+            confirmations.append(confirm_text(result.spec, result.command))
+            reports.append(result.text)
+        if not reports:
+            raise ToolError("; ".join(errors))
+        ctx.final_replies.append("\n".join([*confirmations, *errors]))
+        return "\n".join([*reports, *(f"Fehler: {e}" for e in errors)])
 
     async def show_devices(args: dict[str, Any], ctx: ToolContext) -> str:
         room = args.get("room")

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -11,10 +12,17 @@ from rapidfuzz import fuzz
 
 from cat.audit import AuditLog
 from cat.devices.allowlist import Allowlist
-from cat.devices.commands import DeviceError, describe_command, is_controllable, normalize_command
+from cat.devices.commands import (
+    DeviceError,
+    UnknownDevice,
+    describe_command,
+    is_controllable,
+    normalize_command,
+)
 from cat.devices.confirm import ConfirmManager
 from cat.devices.discovery import DiscoverConfig
 from cat.devices.models import Control, DeviceInfo, DeviceSpec
+from cat.intents.lexicon import Lexicon
 from cat.intents.text import fold, tokenize
 from cat.ws.protocol import DeviceList, DeviceStateEvent, ServerEvent
 
@@ -69,6 +77,8 @@ class DeviceService:
         self._all: list[DeviceSpec] = []
         self._by_item: dict[tuple[str, str], list[DeviceSpec]] = {}
         self._stems: set[str] = set()
+        self.lexicon: Lexicon | None = None  # vom Nutzer erklärte Begriffe (intents/lexicon.py)
+        self.recent: list[tuple[str, str, float]] = []  # (id, Befehl, Zeit) zuletzt ausgeführt
         self.last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
         self._rebuild()
 
@@ -135,6 +145,8 @@ class DeviceService:
         Buchstaben genau)? Dann geht es vermutlich um Geräte: Das Modell muss dafür ein Werkzeug
         benutzen, statt aus dem Kopf zu antworten. Die Wörter stammen aus dem Haus, nicht aus
         einer festen Liste."""
+        if self.lexicon is not None and self.lexicon.mentions(text):
+            return True
         return not self._stems.isdisjoint(_stems(text))
 
     def topic_words(self, text: str) -> str | None:
@@ -146,6 +158,25 @@ class DeviceService:
             if stem in self._stems and stem not in _GENERIC_STEMS:
                 return word[0].upper() + word[1:]
         return None
+
+    def resolve_many(self, ref: str) -> list[DeviceSpec]:
+        """Ein Gerät oder, bei einem vom Nutzer erklärten Begriff ("Dachrollos"), mehrere."""
+        term = self.lexicon.lookup(ref) if self.lexicon is not None else None
+        if term is not None:
+            known = {s.id: s for s in self._all}
+            specs = [known[i] for i in term.ids if i in known]
+            if specs:
+                return specs
+        return [self.resolve(ref)]
+
+    def last_group(self, max_age_s: float = 600.0) -> list[tuple[DeviceSpec, str]]:
+        """Die Geräte der letzten Schaltung (alle, die kurz hintereinander kamen) mit Befehl."""
+        now = time.monotonic()
+        if not self.recent or now - self.recent[-1][2] > max_age_s:
+            return []
+        newest = self.recent[-1][2]
+        known = {s.id: s for s in self._all}
+        return [(known[i], c) for i, c, t in self.recent if newest - t < 5.0 and i in known]
 
     def has_item(self, backend: str, item: str) -> bool:
         return (backend, item) in self._by_item
@@ -249,9 +280,11 @@ class DeviceService:
             if near
             else ""
         )
-        raise DeviceError(
+        raise UnknownDevice(
             f"Das Gerät '{ref}' gibt es nicht (oder es ist nicht freigegeben).{hint} "
-            "list_devices mit query sucht in allen Geräten."
+            "list_devices mit query sucht in allen Geräten.",
+            ref,
+            [i.name for i in near if i.controllable and i.type != "sensor"],
         )
 
     def similar_with_state(self, info: DeviceInfo) -> list[DeviceInfo]:
@@ -429,6 +462,7 @@ class DeviceService:
                 )
 
         await backend.send(spec, command)
+        self.recent = [*self.recent[-7:], (spec.id, command, time.monotonic())]
         await asyncio.sleep(self.settle_delay)
         info = await self.refresh_one(spec)
         shown = f"{info.state} {info.unit}".strip() if info.state is not None else "unbekannt"

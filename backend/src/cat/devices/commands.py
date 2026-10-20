@@ -97,3 +97,12 @@ def describe_command(spec: DeviceSpec, command: str) -> str:
         return f"'{spec.name}' {labels[command]}"
     unit = "°C" if spec.type == "thermostat" else "%"
     return f"'{spec.name}' auf {command} {unit} stellen"
+
+
+class UnknownDevice(DeviceError):
+    """Das Gerät gibt es nicht: Cat kann nachfragen oder sich den Begriff erklären lassen."""
+
+    def __init__(self, message: str, ref: str = "", near: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.ref = ref
+        self.near = near or []

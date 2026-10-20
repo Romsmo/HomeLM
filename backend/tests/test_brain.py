@@ -319,3 +319,27 @@ async def test_a_quick_second_message_waits_for_the_lock_instead_of_failing(
     asyncio.get_running_loop().call_later(0.1, state.run_lock.release)
     reply = await handle_user_text(state, "Hallo")  # kein wait=True: trotzdem kein Fehler
     assert reply.text.startswith("Echo: Hallo")
+
+
+def test_lexicon_terms_can_be_listed_and_deleted_over_http(tmp_path: Path) -> None:
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        password=PASSWORD,  # type: ignore[arg-type]
+        session_secret="x" * 32,  # type: ignore[arg-type]
+        static_dir=None,
+        responder="echo",
+        plugins="",
+        data_dir=tmp_path,
+        learn=False,
+        summarize_sessions=False,
+    )
+    app = create_app(settings)
+    with TestClient(app) as c:
+        assert c.get("/api/lexicon").status_code == 401
+        assert c.post("/api/login", json={"password": PASSWORD}).status_code == 200
+        app.state.cat.lexicon.add("Dach-Rollo", ["unbekannt"])
+        rows = c.get("/api/lexicon").json()
+        assert rows[0]["term"] == "Dach-Rollo" and rows[0]["devices"] == []
+        assert c.delete("/api/lexicon", params={"term": "Dachrollos"}).status_code == 200
+        assert c.get("/api/lexicon").json() == []
+        assert c.delete("/api/lexicon", params={"term": "Dachrollos"}).status_code == 404

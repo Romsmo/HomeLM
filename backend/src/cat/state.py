@@ -15,6 +15,8 @@ from cat.devices.service import DeviceService
 from cat.files import Inbox
 from cat.intents.fillers import FillerBank
 from cat.intents.learned import Learner
+from cat.intents.lexicon import Lexicon
+from cat.intents.teach import TeachService
 from cat.intents.text import has_control_cue, is_question
 from cat.memory.reflect import Fact, Reflector
 from cat.memory.service import MemoryService
@@ -75,7 +77,18 @@ class AppState:
         self.pending_plugins = PendingPlugins(settings.plugins_dir)
         self.fillers = FillerBank(settings.fillers_file, settings.filler)
         self.reflector = Reflector(settings.reflect_idle_s)
+        self.lexicon = Lexicon(settings.lexicon_file)
+        self.devices.lexicon = self.lexicon
         self.current_speaker: Person | None = None  # wer in der laufenden Runde spricht
+        self.teach = TeachService(
+            self.devices,
+            self.lexicon,
+            self.fillers,
+            self.memory,
+            self.audit,
+            lambda: self.current_speaker.name if self.current_speaker else None,
+            settings.teach,
+        )
         self.people = PeopleService(
             PeopleStore(settings.people_file),
             enabled=settings.people,
@@ -85,8 +98,12 @@ class AppState:
             ttl_s=settings.people_ttl_h * 3600,
             ask_voice=settings.people_voice_ask,
             ask_chat=settings.people_chat_ask,
+            # Ein Name kann auch ein Gerätewort sein ("Roman"): Als Anfrage zählen nur Fragen,
+            # Schaltwörter und längere Sätze über Geräte.
             is_request=lambda text: (
-                self.devices.mentions_device(text) or is_question(text) or has_control_cue(text)
+                is_question(text)
+                or has_control_cue(text)
+                or (len(text.split()) > 3 and self.devices.mentions_device(text))
             ),
             on_new=self._person_created,
             on_forget=self._person_forgotten,

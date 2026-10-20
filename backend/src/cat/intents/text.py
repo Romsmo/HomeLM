@@ -103,13 +103,60 @@ def power_conflict(user_text: str, command: str) -> str | None:
 _CONTROL_CUES = (
     _ON_WORDS
     | _OFF_WORDS
-    | frozenset(
-        "hoch runter herunter zu oeffne oeffnen schliesse schliessen stopp stoppe stoppen dimme "
-        "dimm prozent".split()
-    )
+    | frozenset("hoch runter herunter rauf zu auf stopp stoppe stoppen prozent".split())
+)
+# Wortanfänge von Schaltwörtern ("öffne", "schließ", "aufmachen", "entriegel" ...).
+_CUE_PREFIXES = (
+    "oeffn", "schliess", "runterfahr", "hochfahr", "zumach", "aufmach", "anmach", "ausmach",
+    "einschalt", "ausschalt", "anschalt", "abschalt", "dimm", "entriegel", "verriegel",
+    "aufschliess", "abschliess",
+)  # fmt: skip
+# Rückblick, Verneinung oder Frage nach dem Warum: Das ist kein Befehl, auch wenn "Rollo öffnen"
+# darin vorkommt ("Ich hab doch nie gesagt, dass du das Rollo öffnen sollst").
+_NOT_A_COMMAND = frozenset(
+    "nicht nie niemals kein keine nichts warum wieso weshalb gesagt gemeint meinte meinst "
+    "versehentlich faelschlich".split()
 )
 
 
 def has_control_cue(text: str) -> bool:
-    """Klingt der Text nach einem Schaltbefehl (an, aus, hoch, runter, Prozent, eine Zahl)?"""
-    return bool(set(tokenize(text)) & _CONTROL_CUES) or bool(re.search(r"\d\s*%|\d+", text))
+    """Klingt der Text nach einem Schaltbefehl (an, aus, auf, zu, hoch, runter, Prozent, Zahl)?"""
+    tokens = tokenize(text)
+    if set(tokens) & _CONTROL_CUES or re.search(r"\d", text):
+        return True
+    return any(t.startswith(_CUE_PREFIXES) for t in tokens)
+
+
+def negated_or_reported(text: str) -> bool:
+    """Verneint oder berichtet der Text nur ("Ich habe nie gesagt, dass ...")?"""
+    return bool(set(tokenize(text)) & _NOT_A_COMMAND)
+
+
+_OPEN_PREFIXES = ("oeffn", "hochfahr", "aufmach", "rauf", "hoch")
+_CLOSE_PREFIXES = ("schliess", "runterfahr", "zumach", "runter", "herunter")
+
+
+def shutter_conflict(user_text: str, command: str) -> str | None:
+    """Der Nutzer sagt "schließen", das Modell sendet "öffnen" (0 Prozent, up) oder umgekehrt?
+    Dann das Wort des Nutzers, sonst None. Mit Zahl im Text ("auf 30 Prozent") keine Prüfung."""
+    if re.search(r"\d", user_text):
+        return None
+    tokens = tokenize(user_text)
+    wants_open = (
+        "auf" in tokens or "offen" in tokens or any(t.startswith(_OPEN_PREFIXES) for t in tokens)
+    )
+    wants_close = "zu" in tokens or any(t.startswith(_CLOSE_PREFIXES) for t in tokens)
+    if wants_open == wants_close:
+        return None
+    cmd = command.strip().lower().replace(",", ".")
+    try:
+        number: float | None = float(cmd)
+    except ValueError:
+        number = None
+    opening = cmd in {"up", "open", "auf"} or number == 0
+    closing = cmd in {"down", "close", "zu"} or (number is not None and number >= 100)
+    if wants_close and opening:
+        return "schließen"
+    if wants_open and closing:
+        return "öffnen"
+    return None

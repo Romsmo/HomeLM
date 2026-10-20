@@ -22,14 +22,18 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from cat.intents.text import fold
 from cat.people.parse import (
     DECLINE,
+    asks_who_am_i,
     parse_name,
     parse_yes_no,
+    strip_negation,
     wants_person_forgotten,
     wants_voice_forgotten,
 )
 from cat.people.store import PeopleStore, Person
+from cat.voice.speaker import cosine
 
 log = logging.getLogger("cat.people")
 
@@ -61,6 +65,9 @@ class Channel:
     declined_until: float = 0.0
     tries: int = 0
     greeted: dict[str, float] = field(default_factory=dict)
+    learn_person: str | None = None  # frisch angemeldet: die nächsten Äußerungen lernen mit
+    learn_left: int = 0
+    guess: Pending | None = None  # unsichere Zuordnung der letzten Äußerung
 
 
 @dataclass(frozen=True)
@@ -81,7 +88,7 @@ class PeopleService:
         *,
         enabled: bool = True,
         accept: float = 0.60,
-        uncertain: float = 0.45,
+        uncertain: float = 0.50,
         margin: float = 0.08,
         ttl_s: float = 6 * 3600,
         ask_voice: bool = True,
@@ -135,10 +142,19 @@ class PeopleService:
         if embedding is None:
             return NONE
         ch = self.channel(key)
+        self._learn(ch, embedding)
         match = self.store.match(embedding)
         person = match.person
         clear = person is not None and (
             match.runner_up == 0.0 or match.score - match.runner_up >= self._margin
+        )
+        log.info(
+            "Stimme: bester Treffer %s %.2f (zweiter %.2f), Schwellen %.2f/%.2f",
+            person.name if person else "-",
+            match.score,
+            match.runner_up,
+            self._uncertain,
+            self._accept,
         )
         if person is not None and match.score >= self._accept and clear:
             self._set(ch, person, "voice")
@@ -151,9 +167,26 @@ class PeopleService:
         if ch.source == "voice":
             ch.speaker_id = None  # andere oder unklare Stimme: nicht der Vorige
         if person is not None and match.score >= self._uncertain:
+            ch.guess = Pending("confirm", person.id, embedding)
             return Identity("uncertain", person, match.score, embedding)
+        ch.guess = None
         ch.unknown = [*ch.unknown, embedding][-3:]
         return Identity("unknown", None, match.score, embedding)
+
+    def _learn(self, ch: Channel, embedding: list[float]) -> None:
+        """Gerade angemeldet: Die nächsten Äußerungen in dieser Sitzung stammen sehr wahrscheinlich
+        von derselben Person und verbessern ihren Fingerabdruck (eine einzige kurze Probe reicht
+        nicht, um sie von anderen zu unterscheiden)."""
+        if ch.learn_person is None or ch.learn_left <= 0:
+            return
+        person = self.store.get(ch.learn_person)
+        center = person.centroid() if person else None
+        if person is None or not person.consent_voice or center is None:
+            ch.learn_person, ch.learn_left = None, 0
+            return
+        if cosine(embedding, center) >= 0.35:  # grobe Plausibilität: klingt nicht völlig anders
+            self.store.add_embedding(person, embedding)
+        ch.learn_left -= 1
 
     # --- Fragen und Antworten ---
 
@@ -202,19 +235,28 @@ class PeopleService:
             return await self._forget_person(key)
         pending = ch.pending
         if pending is None:
-            name = parse_name(text, asked=False)  # nur ausdrückliche Vorstellung
-            return await self._introduce(ch, key, name) if name and name != DECLINE else None
+            name = parse_name(
+                text,
+                asked=False,
+                known=[p.name for p in self.store.all()],
+                allow_new_be=self.speaker_for(key) is None,
+            )
+            if name and name != DECLINE:
+                return await self._introduce(ch, key, name)
+            return self._who(ch, key) if asks_who_am_i(text) else None
         if pending.kind == "name":
             return await self._answer_name(ch, key, text)
         if pending.kind == "consent":
             return self._answer_consent(ch, text)
-        return self._answer_confirm(ch, text)
+        return await self._answer_confirm(ch, key, text)
 
     async def _answer_name(self, ch: Channel, key: str, text: str) -> str | None:
+        name = parse_name(text, asked=True)
+        if name not in (None, DECLINE) and not self._is_request(text):
+            return await self._introduce(ch, key, str(name))  # auch "Roman": Name und Gerät
         if self._is_request(text):  # der Nutzer hat die Frage übergangen und etwas anderes gefragt
             ch.pending, ch.declined_until = None, self._now() + 3600
             return None
-        name = parse_name(text, asked=True)
         if name == DECLINE:
             ch.pending, ch.declined_until = None, self._now() + 6 * 3600
             return "Alles klar, ich frage nicht weiter."
@@ -277,21 +319,29 @@ class PeopleService:
             self.store.add_embedding(person, embedding)
         ch.unknown.clear()
         self.store.save()
+        ch.learn_person, ch.learn_left = person.id, 3
         return (
-            "Danke, ich merke mir deine Stimme. Mit „Vergiss meine Stimme“ löschst du sie "
-            "jederzeit."
+            "Danke, ich merke mir deine Stimme. Sprich gern noch ein paar Sätze mit mir, dann "
+            "erkenne ich dich sicherer. Mit „Vergiss meine Stimme“ löschst du sie jederzeit."
         )
 
-    def _answer_confirm(self, ch: Channel, text: str) -> str | None:
+    async def _answer_confirm(self, ch: Channel, key: str, text: str) -> str | None:
         pending = ch.pending
         assert pending is not None and pending.person_id is not None
         person = self.store.get(pending.person_id)
-        answer = parse_yes_no(text)
-        if answer is None:
-            ch.pending = None  # keine klare Antwort: weiter wie gewohnt
-            return None
         if person is None:
             ch.pending = None
+            return None
+        name = parse_name(strip_negation(text), asked=True)
+        said_other = name not in (None, DECLINE) and fold(str(name)) != fold(person.name)
+        answer = parse_yes_no(text)
+        if name not in (None, DECLINE) and not said_other:
+            answer = True  # "Ja, Christian." / "Christian."
+        if said_other and not self._is_request(text):
+            self._reject(person, pending.embedding, ch)
+            return await self._introduce(ch, key, str(name))
+        if answer is None:
+            ch.pending = None  # keine klare Antwort: weiter wie gewohnt
             return None
         if answer:
             ch.pending = None
@@ -300,9 +350,36 @@ class PeopleService:
                 self.store.add_embedding(person, pending.embedding)
             self.store.touch(person)
             return f"Schön, {person.name}."
+        self._reject(person, pending.embedding, ch)
         ch.pending = Pending("name")
         ch.tries = 0
         return "Dann sag mir bitte, wie du heißt."
+
+    def _reject(self, person: Person, embedding: list[float] | None, ch: Channel) -> None:
+        """ "Nein, das bin ich nicht": Die Stimme gehört NICHT zu `person` (merken, damit es nicht
+        wieder passiert) und kann zur richtigen Person werden."""
+        if embedding:
+            self.store.add_negative(person, embedding)
+            ch.unknown = [*ch.unknown, embedding][-3:]
+        if ch.speaker_id == person.id:
+            ch.speaker_id = None
+
+    def _who(self, ch: Channel, key: str) -> str:
+        person = self.speaker_for(key)
+        if person is None and ch.guess is not None and ch.guess.person_id:
+            guessed = self.store.get(ch.guess.person_id)
+            if guessed is not None:
+                ch.pending, ch.guess = ch.guess, None
+                return f"Ich glaube, du bist {guessed.name}. Stimmt das?"
+        if person is None:
+            ch.pending, ch.tries = Pending("name"), 0
+            return "Das weiß ich noch nicht. Wie heißt du?"
+        if ch.source == "voice" or (self._last_voice and self._last_voice[0] == person.id):
+            return f"Du bist {person.name}, ich habe dich an der Stimme erkannt."
+        suffix = (
+            " Meine Stimme-Erkennung kennt dich noch nicht." if not person.consent_voice else ""
+        )
+        return f"Du hast dich als {person.name} vorgestellt.{suffix}"
 
     # --- Vergessen ---
 

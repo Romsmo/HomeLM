@@ -326,3 +326,93 @@ async def test_forgetting_a_person_deletes_their_notes(tmp_path: Path) -> None:
     reply = await handle_user_text(state, "Vergiss mich")
     assert "vergessen" in reply.text and state.people.store.all() == []
     assert [n.title for n in state.memory.store.all()] == ["Tee"]
+
+
+# --- Korrekturen aus dem Chat vom 20.10. ---
+
+
+async def test_no_roman_after_a_wrong_guess_teaches_the_right_person(tmp_path: Path) -> None:
+    service = make(tmp_path)
+    for text in ("Mach das Licht an", "Christian", "ja"):
+        await hear(service, 0, text)
+    identity, _, follow = await hear(service, 2, "Wie spät ist es?", key="voice:b")
+    assert identity.status == "uncertain" and follow == "Bist du Christian?"
+    _, reply, _ = await hear(service, 2, "Nein Roman.", key="voice:b")
+    assert reply is not None and "Hallo Roman, schön dich kennenzulernen" in reply
+    assert "Darf ich mir deine Stimme merken" in reply
+    christian = service.store.find_by_name("Christian")
+    assert christian is not None and len(christian.negatives) == 1
+    _, reply, _ = await hear(service, 2, "Ja gerne", key="voice:b")
+    assert reply is not None and "merke mir deine Stimme" in reply
+    # Die Stimme von eben ist jetzt Roman und nicht mehr "unsicher Christian".
+    identity, _, _ = await hear(service, 2, "Mach das Licht aus", key="voice:c")
+    assert identity.person is not None and identity.person.name == "Roman"
+
+
+async def test_rejected_voices_are_not_taken_for_that_person_again(tmp_path: Path) -> None:
+    service = make(tmp_path)
+    for text in ("Mach das Licht an", "Christian", "ja"):
+        await hear(service, 0, text)
+    await hear(service, 2, "Mach das Licht aus", key="voice:b")
+    await hear(service, 2, "Nein", key="voice:b")
+    again, _, _ = await hear(service, 2, "Mach das Licht aus", key="voice:d")
+    assert again.status == "unknown"  # nicht mehr "unsicher Christian"
+
+
+async def test_a_name_that_is_also_a_device_word_is_still_a_name(tmp_path: Path) -> None:
+    from tests.test_teach import make as make_devices
+
+    state = people_state(tmp_path)
+    state.devices = make_devices(tmp_path)[0]
+    first = await handle_user_text(state, "Hallo Welt")
+    assert first.text.endswith("Wie heißt du?")
+    second = await handle_user_text(state, "Roman.")  # auch ein Raumname im Haus
+    assert second.text == "Freut mich, Roman!"
+    assert state.people.store.all()[0].name == "Roman"
+
+
+async def test_who_am_i_and_i_am_with_a_capitalised_name(tmp_path: Path) -> None:
+    service = make(tmp_path, with_encoder=False)
+    assert (
+        await service.intercept("chat", "Wer bin ich?") == "Das weiß ich noch nicht. Wie heißt du?"
+    )
+    service.channel("chat").pending = None
+    reply = await service.intercept("chat", "Ich bin Christian. Kannst du meine Stimme erkennen?")
+    assert reply == "Freut mich, Christian!"
+    assert await service.intercept("chat", "Wer bin ich?") == (
+        "Du hast dich als Christian vorgestellt. Meine Stimme-Erkennung kennt dich noch nicht."
+    )
+    # "Ich bin müde" ist kein Name, "Ich bin Christian" für bekannte Namen auch ohne Frage.
+    assert await service.intercept("chat", "Ich bin müde") is None
+    other = make(tmp_path / "x", with_encoder=False) if False else service
+    assert (
+        await other.intercept("chat", "Ich bin Christian")
+        == "Hallo Christian, schön dich zu hören."
+    )
+
+
+async def test_remember_x_as_user_sets_the_name(tmp_path: Path) -> None:
+    service = make(tmp_path, with_encoder=False)
+    reply = await service.intercept("chat", "Du sollst dir Roman als Nutzer merken.")
+    assert reply == "Freut mich, Roman!" and service.speaker_for("chat").name == "Roman"  # type: ignore[union-attr]
+
+
+def test_voice_outliers_do_not_drag_the_fingerprint(tmp_path: Path) -> None:
+    store = PeopleStore(tmp_path / "p.json")
+    person = store.add("Christian")
+    person.consent_voice = True
+    for i in range(6):
+        person.embeddings.append(vec(1, 0.1 * i))
+    person.embeddings.append(vec(0, 0, 1))  # fremde Stimme im Gespräch
+    center = person.centroid()
+    assert center is not None and cosine(center, vec(1, 0.2)) > 0.97
+
+
+async def test_who_am_i_asks_to_confirm_when_the_voice_is_only_similar(tmp_path: Path) -> None:
+    service = make(tmp_path)
+    for text in ("Mach das Licht an", "Christian", "ja"):
+        await hear(service, 0, text)
+    await service.identify_voice("voice:b", pcm(2))  # klingt ähnlich, aber nicht sicher
+    reply = await service.intercept("voice:b", "Wer bin ich?")
+    assert reply == "Ich glaube, du bist Christian. Stimmt das?"
+    assert await service.intercept("voice:b", "Ja") == "Schön, Christian."

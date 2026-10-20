@@ -3,13 +3,16 @@ import {
   type FillerRow,
   type NoteRow,
   type PeopleInfo,
+  type TermRow,
   deleteFiller,
   deleteNote,
+  deleteTerm,
   forgetPerson,
   forgetVoice,
   listFillers,
   listNotes,
   listPeople,
+  listTerms,
 } from "../lib/brain";
 
 const NO_PEOPLE: PeopleInfo = { enabled: false, voiceAvailable: false, people: [] };
@@ -19,6 +22,7 @@ export function useBrain(connected: boolean, refreshKey: number) {
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [people, setPeople] = useState<PeopleInfo>(NO_PEOPLE);
   const [fillers, setFillers] = useState<FillerRow[]>([]);
+  const [terms, setTerms] = useState<TermRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -27,6 +31,7 @@ export function useBrain(connected: boolean, refreshKey: number) {
       listNotes().then(setNotes, () => {}),
       listPeople().then(setPeople, () => {}),
       listFillers().then(setFillers, () => {}),
+      listTerms().then(setTerms, () => {}),
     ]);
   }, []);
 
@@ -51,11 +56,13 @@ export function useBrain(connected: boolean, refreshKey: number) {
     notes,
     people,
     fillers,
+    terms,
     error,
     removeNote: (path: string) => run(() => deleteNote(path))(),
     removeVoice: (id: string) => run(() => forgetVoice(id))(),
     removePerson: (id: string) => run(() => forgetPerson(id))(),
     removeFiller: (text: string) => run(() => deleteFiller(text))(),
+    removeTerm: (term: string) => run(() => deleteTerm(term))(),
   };
 }
 

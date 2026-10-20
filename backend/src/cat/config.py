@@ -117,11 +117,16 @@ class Settings(BaseSettings):
     people_ttl_h: float = 6.0  # so lange gilt ein im Chat genannter Name
     speaker: bool = True  # Stimmerkennung (Modell wird einmal heruntergeladen, 29 MB)
     speaker_threshold: float = 0.60  # Cosinus ab dem eine Stimme als erkannt gilt
-    speaker_uncertain: float = 0.45  # darunter unbekannt, dazwischen fragt Cat nach
+    speaker_uncertain: float = 0.50  # darunter unbekannt, dazwischen fragt Cat nach
     speaker_margin: float = 0.08  # Abstand zur zweitähnlichsten Person
     reflect: bool = True
+    teach: bool = True  # Erklärungen, Korrekturen, "merk dir" vor dem Modell (intents/teach.py)
     reflect_idle_s: float = 60.0
     knowledge_cache: bool = True
+
+    @property
+    def lexicon_file(self) -> Path:
+        return self.data_dir / "lexicon.json"
 
     @property
     def people_file(self) -> Path:

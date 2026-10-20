@@ -42,6 +42,12 @@ class ToolContext:
     final_replies: list[str] = field(default_factory=list)
     # Der Nutzer redet (vermutlich) über Geräte: Antworten ohne Gerätewerkzeug sind unbelegt.
     device_related: bool = False
+    # Was der Nutzer in dieser Runde gesagt hat (für Prüfungen der Werkzeuge).
+    user_text: str = ""
+    # Ein Schaltbefehl wurde abgewiesen, weil der Text keiner war: Der Agent fragt nach.
+    blocked: bool = False
+    # Fester Antworttext statt eines weiteren Modellschritts (z. B. unbekannter Begriff).
+    clarify: str = ""
     # Alle Werkzeugaufrufe dieses Zuges in der Reihenfolge der Ausführung.
     trace: list[ToolTrace] = field(default_factory=list)
 

@@ -139,6 +139,19 @@ def valid_phrase(text: str) -> str | None:
     return clean
 
 
+def user_phrase(text: str) -> str | None:
+    """Ein vom Nutzer genannter Füllsatz: weniger streng als bei selbst geschriebenen (der Nutzer
+    entscheidet), aber kurz, ohne Markdown und Zahlen."""
+    clean = " ".join(text.strip().strip("\"„“'`*- ").split())
+    if not clean or not 2 <= len(clean.split()) <= MAX_WORDS or len(clean) > MAX_CHARS:
+        return None
+    if any(ch.isdigit() for ch in clean) or any(ch in clean for ch in "*#_`<>[]\\@"):
+        return None
+    if not clean.endswith((".", "!", "?")):
+        clean += "."
+    return clean
+
+
 def category_for(text: str, *, device_related: bool, claude: bool) -> str:
     """Welche Art Füllsatz passt zur Anfrage? Rein aus den Wörtern, ohne Modell."""
     from cat.intents.text import has_control_cue
@@ -273,6 +286,18 @@ class FillerBank:
         if added:
             self._save()
         return added
+
+    def add_user(self, category: str, text: str) -> bool:
+        """Satz des Nutzers aufnehmen (auch wenn er vorher gelöscht wurde). False: gibt es schon."""
+        if category not in CATEGORIES:
+            return False
+        key = fold(text)
+        if key in self._items:
+            return False
+        self._banned.discard(key)
+        self._items[key] = Filler(text, category, "user")
+        self._save()
+        return True
 
     def remove(self, text: str) -> bool:
         """Satz löschen und sperren (kommt nicht wieder, auch nicht aus der Vorgabe)."""

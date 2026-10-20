@@ -6,8 +6,9 @@ ist kein Name.
 """
 
 import re
+from collections.abc import Iterable
 
-from cat.intents.text import tokenize
+from cat.intents.text import fold, tokenize
 
 DECLINE = "decline"
 _INTRO = re.compile(
@@ -42,25 +43,55 @@ def is_decline(text: str) -> bool:
     return bool(tokens & _DECLINE_TOKENS) and not (tokens & _YES)
 
 
-def parse_name(text: str, *, asked: bool) -> str | None:
-    """Der Name aus der Antwort, `DECLINE` bei Ablehnung, sonst None. `asked`: Cat hat gerade
-    nach dem Namen gefragt (dann reicht auch ein einzelnes Wort)."""
+_BE = re.compile(r"^(?i:also\s+|nein,?\s+|doch,?\s+)?(?i:ich\s+bin)\s+(?P<name>[A-ZÄÖÜ][\wäöüß-]+)")
+_REMEMBER_NAME = re.compile(
+    r"(?i:merk(?:e)?\s+dir|du\s+sollst\s+dir|nenn\s+mich|nennt\s+mich)\s+(?i:bitte\s+)?"
+    r"(?P<name>[A-ZÄÖÜ][\wäöüß-]+)\s+(?i:als\s+(?:nutzer|benutzer|namen)|merken)",
+)
+_LEADING_NO = re.compile(r"^\s*(?:nein|nee|nö|noe|ne|doch)\b[\s,.!-]*", re.IGNORECASE)
+
+
+def strip_negation(text: str) -> str:
+    """ "Nein, Roman." -> "Roman."."""
+    return _LEADING_NO.sub("", text, count=1).strip()
+
+
+def _clean_name(candidate: str) -> str | None:
+    words = [w for w in _WORD.findall(candidate) if w]
+    while words and words[-1].lower() in _TRAILING:
+        words.pop()
+    if not words or len(words) > 2 or words[0].lower() in _NOT_NAMES:
+        return None
+    name = " ".join(w[0].upper() + w[1:] for w in words)
+    return name if 2 <= len(name) <= MAX_NAME_CHARS else None
+
+
+def parse_name(
+    text: str, *, asked: bool, known: Iterable[str] = (), allow_new_be: bool = False
+) -> str | None:
+    """Der Name aus der Antwort, `DECLINE` bei Ablehnung, sonst None.
+
+    `asked`: Cat hat gerade nach dem Namen gefragt (dann reicht auch ein einzelnes Wort).
+    Ohne Frage gelten ausdrückliche Vorstellungen ("Ich heiße ...", "Mein Name ist ...",
+    "Merk dir Roman als Nutzer") und "Ich bin <Name>" für bereits bekannte Namen, bei
+    `allow_new_be` (Cat weiß gar nicht, wer spricht) auch für neue großgeschriebene Namen."""
     clean = text.strip().strip(".!?,;: ")
     if not clean:
         return None
     if asked and is_decline(clean):
         return DECLINE
-    match = (_INTRO if asked else _EXPLICIT).match(clean)
-    candidate = match.group("name") if match else (clean if asked else "")
-    words = [w for w in _WORD.findall(candidate) if w]
-    while words and words[-1].lower() in _TRAILING:
-        words.pop()
-    if not words or len(words) > 2:
-        return None
-    if words[0].lower() in _NOT_NAMES:
-        return None
-    name = " ".join(w[0].upper() + w[1:] for w in words)
-    return name if 2 <= len(name) <= MAX_NAME_CHARS else None
+    first = re.split(r"(?<=[.!?])\s+", clean, maxsplit=1)[0].strip(".!?,;: ")
+    if match := _REMEMBER_NAME.search(clean):
+        return _clean_name(match.group("name"))
+    if match := (_INTRO if asked else _EXPLICIT).match(first):
+        return _clean_name(match.group("name"))
+    if asked:
+        return _clean_name(first)
+    if match := _BE.match(first):
+        name = _clean_name(match.group("name"))
+        if name and (allow_new_be or fold(name) in {fold(k) for k in known}):
+            return name
+    return None
 
 
 def parse_yes_no(text: str) -> bool | None:
@@ -83,3 +114,14 @@ def wants_voice_forgotten(text: str) -> bool:
 
 def wants_person_forgotten(text: str) -> bool:
     return bool(_FORGET_ME.search(text))
+
+
+_WHO = re.compile(
+    r"\bwer\s+bin\s+ich\b|\bkennst\s+du\s+mich\b|\bwie\s+hei(?:ß|ss)e\s+ich\b|"
+    r"\berkennst\s+du\s+(?:mich|meine\s+stimme)\b|\bkannst\s+du\s+meine\s+stimme\s+erkennen\b",
+    re.IGNORECASE,
+)
+
+
+def asks_who_am_i(text: str) -> bool:
+    return bool(_WHO.search(text))

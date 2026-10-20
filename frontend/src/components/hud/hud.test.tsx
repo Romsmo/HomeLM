@@ -136,12 +136,14 @@ describe("LearnedPanel mit Gedächtnis", () => {
       voiceAvailable: true,
       people: [{ id: "p1", name: "Roman", created: 1, last_seen: null, voice: true, samples: 3 }],
     },
+    terms: [{ term: "Dachrollos", devices: ["Romans Rollo", "Marius Rollo"], uses: 1 }],
     fillers: [{ text: "Moment, ich schaue kurz nach.", category: "lookup", source: "generated", uses: 2, last_used: null }],
     error: null,
     removeNote: vi.fn(),
     removeVoice: vi.fn(),
     removePerson: vi.fn(),
     removeFiller: vi.fn(),
+    removeTerm: vi.fn(),
     ...over,
   });
   const panel = (b: Brain) => (
@@ -158,6 +160,17 @@ describe("LearnedPanel mit Gedächtnis", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Füllsätze" }));
     expect(screen.getByText("Moment, ich schaue kurz nach.")).toBeInTheDocument();
     expect(screen.getByText(/dazugelernt/)).toBeInTheDocument();
+  });
+
+  it("zeigt erklärte Begriffe mit ihren Geräten und löscht sie einzeln", () => {
+    const b = brain();
+    render(panel(b));
+    fireEvent.click(screen.getByRole("tab", { name: "Begriffe" }));
+    expect(screen.getByText("Dachrollos")).toBeInTheDocument();
+    expect(screen.getByText(/Romans Rollo, Marius Rollo/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Begriff „Dachrollos“ vergessen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Begriff „Dachrollos“ wirklich vergessen" }));
+    expect(b.removeTerm).toHaveBeenCalledWith("Dachrollos");
   });
 
   it("löscht erst nach einer zweiten Bestätigung", () => {

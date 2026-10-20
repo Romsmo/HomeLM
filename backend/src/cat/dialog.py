@@ -125,6 +125,10 @@ async def handle_user_text(
                 user.tooled = True
                 return await _say_directly(state, reply, on_delta, started, manage_voice_state)
         state.current_speaker = state.people.speaker_for(channel)
+        taught = await state.teach.intercept(text)
+        if taught is not None:  # Erklärung, Korrektur oder "merk dir": nie an das Modell
+            user.tooled = True
+            return await _say_directly(state, taught, on_delta, started, manage_voice_state)
 
         if state.learner.enabled:
             fast = await _try_learned(state, text, room)

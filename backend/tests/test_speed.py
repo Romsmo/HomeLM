@@ -70,7 +70,7 @@ def agent_for(service: DeviceService, provider: FakeProvider) -> Agent:
 
 
 async def run(
-    agent: Agent, text: str = "x", device_related: bool = False
+    agent: Agent, text: str = "Mach 1", device_related: bool = False
 ) -> tuple[str, ToolContext]:
     async def emit(_: object) -> None: ...
 
@@ -424,7 +424,7 @@ def test_control_cues() -> None:
 
     assert has_control_cue("Mach das Licht aus") and has_control_cue("Rollo auf 30 Prozent")
     assert has_control_cue("Fahr das Rollo runter")
-    assert not has_control_cue("zähle mir bitte auf, welche Rollos offen sind")
+    assert not has_control_cue("Zeig mir die Rollos im Haus")
     assert is_question("zähle mir bitte auf, welche Rollos offen sind")
 
 
@@ -564,3 +564,44 @@ async def test_device_requests_get_no_time_or_memory_in_the_prompt(tmp_path: Pat
     sent = provider.calls[0]["messages"][-1]["content"]
     assert sent == "Mach das Deckenlicht von Roman an"
     assert state.memory.context_for("Deckenlicht Roman Rollo") == ""  # Kurzbefehle nie fürs Modell
+
+
+async def test_a_name_or_an_explanation_never_switches_anything(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    for text in (
+        "Roman.",
+        "Mit Dach-Rollo meine ich Rollo Roman",
+        "Ich hab doch nie gesagt, dass du das Rollo öffnen sollst",
+        "Warum hast du Romans Rollo geöffnet?",
+    ):
+        provider = FakeProvider(
+            [ToolCall("c", "set_state", {"device": "Romans Rollo", "command": "up"})]
+        )
+        out, ctx = await run(compact_agent(service, provider), text, True)
+        assert "nicht als Schaltbefehl" in out and ctx.trace[0].ok is False
+    assert backend.sent == []
+
+
+async def test_closing_words_with_an_opening_command_are_refused(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider(
+        [ToolCall("c1", "set_state", {"device": "Romans Rollo", "command": "0"})],
+        [ToolCall("c2", "set_state", {"device": "Romans Rollo", "command": "down"})],
+    )
+    out, _ = await run(agent_for(service, provider), "Bitte schließe Romans Rollo", True)
+    assert backend.sent == [("rollo", "down")] and out == "Okay, Romans Rollo fährt runter."
+
+
+def test_shutter_conflict_and_wording() -> None:
+    from cat.intents.replies import confirm_text
+    from cat.intents.text import shutter_conflict
+
+    assert shutter_conflict("Bitte die Dachrollos schließen", "0") == "schließen"
+    assert shutter_conflict("Mach das Rollo auf", "down") == "öffnen"
+    assert shutter_conflict("Mach das Rollo auf", "up") is None
+    assert shutter_conflict("Rollo auf 30 Prozent", "0") is None  # Zahl im Text: keine Prüfung
+    assert shutter_conflict("Schließe und öffne", "0") is None  # unklar
+    spec = DeviceSpec(id="r", backend="openhab", item="R", name="Rollo", room="Z", type="shutter")
+    assert confirm_text(spec, "0") == "Okay, Rollo ist offen."
+    assert confirm_text(spec, "100") == "Okay, Rollo ist zu."
+    assert confirm_text(spec, "30") == "Okay, Rollo ist zu 30 Prozent geschlossen."
