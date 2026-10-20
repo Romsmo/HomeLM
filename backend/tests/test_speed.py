@@ -388,7 +388,7 @@ async def test_tool_turns_are_marked_so_the_local_model_does_not_copy_them(
 
 def test_defaults_favour_speed() -> None:
     s = Settings(_env_file=None)  # type: ignore[call-arg]
-    assert s.local_threads >= 4 and s.local_keep_alive == "60m" and s.vad_silence_s <= 1.2
+    assert s.local_threads >= 4 and s.local_keep_alive == "24h" and s.vad_silence_s <= 1.2
 
 
 @pytest.mark.parametrize("name", LOCAL_TOOLS)

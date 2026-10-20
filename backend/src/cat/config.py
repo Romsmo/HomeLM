@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # Rechenthreads für Ollama: so viele wie `cpus` des Ollama-Containers (sonst drosselt das
     # CFS-Limit, gemessen: 2,4 statt 10 Token pro Sekunde bei 6 Threads auf 3 CPUs).
     local_threads: int = 5
-    local_keep_alive: str = "60m"
+    local_keep_alive: str = "24h"
     # Geräte per Kurzzeile ("S|Licht|off") statt Werkzeugaufruf: ca. 3 s schneller je Befehl.
     local_compact: bool = True
     # Wartezeit zwischen zwei Teilen der Antwort; die Verarbeitung eines langen Prompts auf der

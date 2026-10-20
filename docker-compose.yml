@@ -73,7 +73,9 @@ services:
     container_name: homelm-ollama
     restart: unless-stopped
     environment:
-      OLLAMA_KEEP_ALIVE: 60m  # Modell nach 60 Minuten Leerlauf aus dem RAM entladen
+      # Das Modell bleibt 24 Stunden im RAM: Ein Kaltstart kostet ca. 30 Sekunden (gemessen: der
+      # Prompt wird mit nur 38 Token/s verarbeitet), und das wäre die erste Antwort am Morgen.
+      OLLAMA_KEEP_ALIVE: 24h
       OLLAMA_MAX_LOADED_MODELS: "1"
       OLLAMA_NUM_PARALLEL: "1"
     volumes:
