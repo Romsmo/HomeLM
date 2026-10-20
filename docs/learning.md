@@ -44,3 +44,16 @@ Die Liste **lernt dazu**:
 - **Abwechslung:** Der am längsten nicht benutzte Satz kommt zuerst, nie zweimal derselbe hintereinander. Der Gebrauch wird gezählt.
 - **Löschen:** Im Widget "Gelernt", Reiter "Füllsätze", lässt sich jeder Satz löschen. Gelöschte Sätze kommen nicht wieder, auch nicht die Vorgaben.
 - Gespeichert in `data/fillers.json`.
+
+## Beibringen und Klarstellen (Phase 23, `intents/teach.py`, `intents/lexicon.py`)
+
+Erklärungen sind keine Befehle. Das lokale Modell hielt "Mit Dach-Rollo meine ich Rollo Roman und Rollo Marius" für einen Befehl und fuhr die Rollläden hoch. Solche Sätze werden jetzt **vor dem Modell** erkannt und fest verarbeitet (sofort, ohne Fehlschaltung):
+
+- **Begriffe erklären:** "Mit Dach-Rollo meine ich Rollo Roman und Rollo Marius", "Wenn ich Kinderrollos sage, meine ich ...". Der Begriff verweist danach auf alle genannten Geräte: "Mach die Dachrollos zu" schaltet beide (Mehrzahl, Bindestrich und Schreibweise egal). Er gilt nur, wenn **alle** genannten Geräte eindeutig gefunden werden und der Begriff selbst kein Gerät ist. Auflösung im Code, nicht im Prompt: kostet das Modell keine Token. Nachfragen: "Was ist ein Dachrollo?", "Welche Begriffe kennst du?". Löschen im Widget "Gelernt", Reiter "Begriffe" (`/api/lexicon`, gespeichert in `data/lexicon.json`).
+- **Unbekannter Begriff:** Statt zu raten sagt Cat "„Deckenrollos“ kenne ich nicht, deshalb habe ich nichts gemacht. Erkläre es mir, zum Beispiel: „Mit Deckenrollos meine ich ...“" (ohne zweiten Modellschritt). Nennt das Modell bei einer Leseanfrage ein Wort wie "Lichter", das kein einzelnes Gerät ist, zählt Cat die passenden Geräte mit Zustand auf.
+- **Korrigieren:** "Ähm, bitte schließen, meinte ich." wendet das neue Wort (schließen, öffnen, an, aus, 30 Prozent) auf die Geräte der letzten Schaltung an. Nie bei Türen, Schlössern und Toren.
+- **Rückgängig:** "Mach das rückgängig" stellt den Zustand **vor** der letzten Schaltung wieder her (Cat merkt sich ihn). Sagt jemand "Ich hab doch nie gesagt, dass du das Rollo öffnen sollst" oder "Das war falsch", entschuldigt sich Cat und fragt "Soll ich das rückgängig machen?".
+- **Merken:** "..., merk dir das" und "Merk dir, dass ..." für Regeln und Erklärungen legen sofort eine Notiz an (ohne Modell). Persönliche Fakten ("Ich trinke ...") schreibt weiter das Modell in dritter Person.
+- **Füllsatz aufnehmen:** "Nimm folgenden Füllsatz auf: Einen Moment, ist gleich erledigt (bei Schalten)." (Art: Schalten, Nachsehen, Merken, Nachdenken, Claude).
+
+**Sicherungen gegen Fehlbefehle** (`agent/loop.py`, `devices/tools.py`): Ein `set_state` des Modells wird nur ausgeführt, wenn der Text des Nutzers nach einem Schaltbefehl klingt (an, aus, auf, zu, hoch, runter, öffnen, schließen, Prozentzahl ...) und nicht nur berichtet oder verneint ("nie gesagt", "nicht", "warum hast du"). Ein Name ("Roman"), eine Erklärung oder ein Vorwurf schaltet nichts. Dazu die Richtungsprüfung für Rollläden: "schließen" mit 0 Prozent oder "up" (und umgekehrt) wird abgewiesen (0 Prozent ist offen, 100 Prozent zu), und die Bestätigung sagt "ist offen", "ist zu" oder "ist zu 30 Prozent geschlossen" statt "auf 0 Prozent zu".

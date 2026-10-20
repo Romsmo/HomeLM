@@ -16,6 +16,7 @@ erkannt und fest verarbeitet (schnell, ohne Fehlschaltung):
 
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,7 @@ from cat.intents.replies import confirm_text
 from cat.intents.text import fold, tokenize
 from cat.memory.notes import NoteError
 from cat.memory.service import MemoryService
+from cat.people.parse import parse_yes_no
 
 log = logging.getLogger("cat.teach")
 
@@ -85,6 +87,16 @@ _WHICH_TERMS = re.compile(
 )
 
 _PERSONAL = frozenset("ich mein meine meinen meinem meiner wir uns unser unsere".split())
+_UNDO = re.compile(
+    r"r(?:ü|ue)ckg(?:ä|ae)ngig|stell\w*\s+(?:es|das|sie|ihn)\s+wieder\s+(?:so\s+)?(?:hin|her|zur(?:ü|ue)ck)|"
+    r"\bmach\w*\s+(?:es|das)\s+wieder\s+zur(?:ü|ue)ck\b",
+    re.IGNORECASE,
+)
+_COMPLAINT = re.compile(
+    r"nie\s+gesagt|nicht\s+gesagt|(?:das\s+)?wollte\s+ich\s+nicht|nicht\s+gemeint|"
+    r"das\s+war\s+(?:falsch|nicht\s+richtig)|\b(?:warum|wieso|weshalb)\s+hast\s+du\b",
+    re.IGNORECASE,
+)
 _CLOSE = ("schliess", "runter", "herunter", "zumach")
 _OPEN = ("oeffn", "hoch", "rauf", "aufmach")
 MAX_TARGETS = 8
@@ -113,6 +125,7 @@ class TeachService:
         self._audit = audit
         self._speaker = speaker_name
         self.enabled = enabled
+        self._undo_offer = -1e9  # Zeit der Frage "Soll ich das rückgängig machen?"
 
     async def intercept(self, text: str) -> str | None:
         """Eine feste Antwort, wenn der Text etwas beibringt oder klarstellt, sonst None."""
@@ -121,7 +134,18 @@ class TeachService:
         clean = " ".join(text.split()).strip()
         if not clean:
             return None
+        if (
+            time.monotonic() - self._undo_offer < 90
+        ):  # Antwort auf "Soll ich das rückgängig machen?"
+            self._undo_offer = -1e9
+            answer = parse_yes_no(clean)
+            if answer is True:
+                return await self._undo()
+            if answer is False:
+                return "Okay, ich lasse es so."
         for handler in (
+            self._undo_request,
+            self._complaint,
             self._filler,
             self._explain,
             self._correction,
@@ -134,6 +158,49 @@ class TeachService:
             if reply is not None:
                 return reply
         return None
+
+    # --- Rückgängig und Entschuldigung ---
+
+    def _undo_request(self, text: str):  # type: ignore[no-untyped-def]
+        return self._undo() if _UNDO.search(text) else None
+
+    async def _undo(self) -> str:
+        group = self._devices.undo_group()
+        if not group:
+            return "Ich weiß gerade nicht, was ich rückgängig machen soll."
+        lines: list[str] = []
+        for spec, before in group:
+            if spec.effective_risk == "high":
+                return (
+                    "Bei Türen, Schlössern und Toren brauche ich immer einen vollständigen Befehl."
+                )
+            wanted = _restore_command(spec, before)
+            if wanted is None:
+                continue
+            try:
+                result = await self._devices.command_detailed(spec.id, wanted, source="undo")
+            except DeviceError as exc:
+                lines.append(str(exc))
+                continue
+            lines.append(confirm_text(result.spec, result.command))
+        if not lines:
+            return "Den vorherigen Zustand kenne ich nicht, deshalb kann ich es nicht zurücksetzen."
+        if self._audit is not None:
+            await self._audit.record("undo", {}, " ".join(lines), source="teach")
+        return "\n".join(lines)
+
+    def _complaint(self, text: str) -> str | None:
+        if _COMPLAINT.search(text) is None:
+            return None
+        group = self._devices.undo_group()
+        if not group:
+            return "Entschuldige, das war ein Missverständnis. Ich habe zuletzt nichts geschaltet."
+        self._undo_offer = time.monotonic()
+        names = _join([s.name for s, _ in group])
+        return (
+            f"Entschuldige, das war ein Missverständnis. Zuletzt habe ich {names} geschaltet. "
+            "Soll ich das rückgängig machen?"
+        )
 
     # --- Füllsatz aufnehmen ---
 
@@ -345,6 +412,22 @@ def _command_word(tokens: list[str], text: str) -> str | None:
         or any(t.startswith(("anmach", "anschalt")) for t in tokens)
     ):
         return "on"
+    return None
+
+
+def _restore_command(spec: DeviceSpec, before: str | None) -> str | None:
+    """Der Befehl, der den Zustand vor der Schaltung wiederherstellt (sonst None)."""
+    if before is None:
+        return None
+    raw = before.strip().upper()
+    if raw in ("ON", "OFF") and spec.type in ("light", "switch", "dimmer"):
+        return raw.lower()
+    try:
+        number = float(before.replace(",", "."))
+    except ValueError:
+        return None
+    if spec.type in ("shutter", "dimmer", "thermostat"):
+        return str(int(number)) if number == int(number) else str(number)
     return None
 
 

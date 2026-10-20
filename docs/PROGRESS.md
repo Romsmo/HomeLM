@@ -510,3 +510,34 @@ Im Sprachweg kommen Pause (1,1 s) und Spracherkennung (ca. 2,1 s) dazu, bevor da
 - Der Benchmark entlädt das Cat-Modell am Ende (Kaltstart danach 30 bis 40 s): Danach einmal etwas fragen oder warten, bis `warm()` fertig ist.
 - Zurück zu Werkzeugaufrufen: `CAT_LOCAL_COMPACT=false`.
 - Offene Hebel (brauchen Sie): RAM und CPU-Takt, siehe `docs/offline.md`, Abschnitt "Modellvergleich".
+
+## Phase 23: Fehlbefehle, Erklären statt Schalten, Personen, Effizienz (2026-10-20)
+
+Auftrag des Nutzers (mit Chat-Protokoll vom 20.10.): (1) Stimmen werden nicht auseinandergehalten, (2) Cat versteht oft falsch und macht Dinge, die es nicht sollte, (3) lernfähiger: Missverständnisse aufklären, Unbekanntes erklären können, (4) Modell effizienter, (5) erklären, wie das Second Brain umgesetzt ist und ob es beim Tempo hilft (Antwort: `docs/memory.md`, letzter Abschnitt).
+
+**Was im Protokoll schiefging (Audit-Log bestätigt)**
+- "Mit Dach-Rollo meine ich Rollo Roman und Rollo Marius" wurde als Befehl gelesen: beide Rollos fuhren **hoch**. Weitere Beispiele: "nehme folgenden Füllsatz mit auf" fuhr Romans Rollo runter, "Roman." (Antwort auf "Wie heißt du?") setzte das Rollo auf 0 %, "Bitte die Dachrollos schließen" sendete 0 % (= offen) und meldete "ist auf 0 Prozent zu".
+- "Roman." wurde nie als Name erkannt, weil Roman auch ein Gerätewort ist. Nach "Bist du Christian?" und "Nein Roman" fragte Cat nur erneut nach dem Namen.
+- Die Stimmerkennung hatte nur Christian (8 Proben, untereinander 0,60 bis 0,89 ähnlich). Romans Stimme lag im "unsicher"-Bereich (0,45 bis 0,60) zu Christian.
+- "..., merk dir das" ging an Claude statt in eine Notiz. "Ich hab doch nie gesagt ..." und "Nein, du sollst dir Roman als Nutzer merken" lösten Werkzeugaufrufe aus (u. a. `get_weather`).
+
+**Gebaut** (Details in `docs/learning.md` und `docs/people.md`)
+- **Nur echte Schaltbefehle:** `set_state` nur, wenn der Text nach Schaltbefehl klingt und nicht verneint oder berichtet; sonst "Das habe ich nicht als Schaltbefehl verstanden, deshalb habe ich nichts geschaltet". Rollo-Richtung geprüft (schließen gegen 0 %/up wird abgewiesen), Bestätigungstexte "ist offen", "ist zu", "ist zu 30 Prozent geschlossen".
+- **Wortschatz:** Begriffe erklären ("Mit Dach-Rollo meine ich ..."), danach gelten sie für alle genannten Geräte (Auflösung im Code, keine Prompt-Token). Unbekannte Begriffe: Cat sagt es und bietet das Erklären an, statt zu raten.
+- **Korrigieren, rückgängig, entschuldigen** ("meinte ich", "Mach das rückgängig", "Ich hab nie gesagt ..."), **merken** und **Füllsätze aufnehmen** laufen jetzt ohne Modell (0,0 s). Cat merkt sich den Zustand vor jeder Schaltung.
+- **Personen:** Name-gleich-Gerätewort, "Nein, ich bin Roman" (legt an, merkt die Stimme als "nicht Christian"), "Wer bin ich?", "Ich bin X", Lernphase nach dem Ja (3 weitere Äußerungen), Ausreißer-Schutz im Fingerabdruck, Schwelle für "unsicher" 0,50, Log jeder Zuordnung.
+- Widget "Gelernt": neuer Reiter "Begriffe".
+
+**Effizienz (gemessen, `scripts/speed_bench.py`, Server)**
+- Das Modell verarbeitet den Prompt nur mit **38 Token/s** (Kaltstart 1100 Token = 28 s, jedes zusätzliche Token ca. 26 ms) und gibt 7,8 Token/s aus. Daher zählt jedes Prompt-Token: Geräteanfragen ohne Uhrzeit und Notizen (Phase 22) und kurzer Verlauf sind die richtigen Hebel.
+- **Neu: Das Modell bleibt 24 Stunden geladen** (`OLLAMA_KEEP_ALIVE`, `CAT_LOCAL_KEEP_ALIVE`; vorher 60 Minuten, danach kostete die erste Antwort ca. 30 s).
+- Verglichen und **nicht** übernommen: `Q4_0` (Ausgabe +11 %, Prompt -16 %), `Q4_K_S` (Ausgabe +8 %, gleicher Prompt, aber nur 21/24 richtig, weil die Vorlage des GGUF die Werkzeuge anders darstellt), 4 oder 6 Threads (7,5 und 6,6 statt 7,8 Token/s), `num_batch` 256/1024 (kein Effekt). Es gibt `q4_0`/`q4_K_S` auch nicht im Ollama-Verzeichnis (nur `q4_K_M`, `q8_0`, `fp16`). Die Testmodelle wurden wieder gelöscht.
+
+**Abnahme**
+- Backend 643 Tests (+34), Frontend 153 (+1), ruff sauber.
+- **Live auf dem Server** (Chat): "Testperson." wird Name (0,0 s), "Wer bin ich?" fest beantwortet, "Mit Dach-Rollo meine ich Rollo Roman und Rollo Marius." erzeugt den Begriff (0,1 s, **kein** Rollo bewegt), "Was ist ein Dachrollo?" beantwortet, Füllsatz und "merk dir das" ohne Modell. Nicht live getestet (bewegt echte Geräte): Rückgängig und die Rollo-Richtungsprüfung, dafür Tests mit nachgebautem Backend.
+
+**Hinweise**
+- Auf dem Server liegen jetzt die Begriffe/Füllsatz/Notiz aus den Live-Tests (genau die, die Sie im Chat erklärt hatten: Dach-Rollo, Füllsatz "Einen Moment, ist gleich erledigt", Rollo-Regel) und die Testperson "Testperson" (zu löschen im Widget "Gelernt", Reiter "Personen").
+- Das Modell kann weiter Fehler machen (4B-Modell); die Sicherungen fangen die bekannten Fälle, nicht alle denkbaren. Wenn etwas Falsches passiert: "Mach das rückgängig".
+- Rollback: `CAT_TEACH=false` schaltet das Beibringen ab; `git revert` der Commits dieser Phase.

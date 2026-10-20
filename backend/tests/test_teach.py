@@ -27,6 +27,7 @@ devices:
   - {id: marius, backend: openhab, item: M, name: Marius Rollo, room: Marius Zimmer, type: shutter}
   - {id: licht, backend: openhab, item: L, name: Deckenlicht Roman, room: Romans Zimmer, type: light}
   - {id: tuer, backend: openhab, item: T, name: Haustür, room: Flur, type: door, risk: high}
+  - {id: terrasse, backend: openhab, item: TL, name: Terrassenlicht, room: Terrasse, type: light}
 """
 
 
@@ -164,7 +165,7 @@ async def test_a_correction_without_a_recent_command_does_nothing(tmp_path: Path
 
 async def test_a_correction_never_touches_doors(tmp_path: Path) -> None:
     service, backend, teach = make(tmp_path)
-    service.recent = [("tuer", "unlock", __import__("time").monotonic())]
+    service.recent = [("tuer", "unlock", __import__("time").monotonic(), None)]
     reply = await teach.intercept("Bitte schließen, meinte ich")
     assert backend.sent == [] and "vollständigen Befehl" in (reply or "")
 
@@ -274,3 +275,56 @@ async def test_an_unknown_device_word_offers_to_learn_it(tmp_path: Path) -> None
     assert "„Deckenrollos“ kenne ich nicht" in out and "Mit Deckenrollos meine ich" in out
     assert backend.sent == [] and len(provider.calls) == 1  # kein zweiter Modellschritt
     assert ToolCall  # Import für Lesbarkeit
+
+
+# --- Rückgängig, Entschuldigung, Gruppenfrage ---
+
+
+async def test_undo_restores_the_state_before_the_last_command(tmp_path: Path) -> None:
+    service, backend, teach = make(tmp_path)
+    service.seed_states("openhab", {"R": RawState("0"), "M": RawState("0")})
+    await service.command("Romans Rollo", "down")
+    await service.command("Marius Rollo", "down")
+    backend.sent.clear()
+    reply = await teach.intercept("Mach das bitte rückgängig")
+    assert backend.sent == [("roman", "0"), ("marius", "0")]
+    assert reply == "Okay, Romans Rollo ist offen.\nOkay, Marius Rollo ist offen."
+
+
+async def test_a_complaint_offers_to_undo_and_waits_for_the_answer(tmp_path: Path) -> None:
+    service, backend, teach = make(tmp_path)
+    service.seed_states("openhab", {"R": RawState("0")})
+    await service.command("Romans Rollo", "down")
+    backend.sent.clear()
+    reply = await teach.intercept("Aber ich hab doch nie gesagt, dass du das Rollo öffnen sollst.")
+    assert reply is not None and "Missverständnis" in reply and "Soll ich das rückgängig" in reply
+    assert backend.sent == []  # erst fragen
+    assert await teach.intercept("Ja") == "Okay, Romans Rollo ist offen."
+    assert backend.sent == [("roman", "0")]
+    # Nein: nichts passiert
+    await service.command("Romans Rollo", "down")
+    backend.sent.clear()
+    await teach.intercept("Das wollte ich nicht")
+    assert await teach.intercept("Nein") == "Okay, ich lasse es so." and backend.sent == []
+
+
+async def test_a_complaint_without_a_recent_command_just_apologises(tmp_path: Path) -> None:
+    _, backend, teach = make(tmp_path)
+    reply = await teach.intercept("Das war falsch")
+    assert reply == "Entschuldige, das war ein Missverständnis. Ich habe zuletzt nichts geschaltet."
+    assert await teach.intercept("Mach das rückgängig") == (
+        "Ich weiß gerade nicht, was ich rückgängig machen soll."
+    )
+    assert backend.sent == []
+
+
+async def test_a_group_word_after_g_lists_the_matching_devices(tmp_path: Path) -> None:
+    from tests.test_speed import compact_agent, run
+
+    service, _, _ = make(tmp_path)
+    service.seed_states("openhab", {"L": RawState("OFF"), "TL": RawState("ON")})
+    lights = [i for i in service.snapshot() if i.type == "light"]
+    service.search = lambda query, limit=20: lights  # type: ignore[method-assign]
+    provider = FakeProvider([TextDelta("G|Beleuchtungen")])  # kein einzelnes Gerät
+    out, _ = await run(compact_agent(service, provider), "Welche Lichter sind an?", True)
+    assert out == "Zu „Beleuchtungen“ gibt es: Deckenlicht Roman (aus), Terrassenlicht (an)."

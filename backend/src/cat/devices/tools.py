@@ -79,6 +79,14 @@ def format_device(info: DeviceInfo) -> str:
     )
 
 
+def _state_word(info: DeviceInfo) -> str:
+    """Zustand für Aufzählungen: an, aus, offen, zu, sonst der Wert."""
+    for word in ("an", "aus", "offen", "zu"):
+        if _has_state(info, word):
+            return word
+    return _short_state(info)
+
+
 def _unknown_text(exc: UnknownDevice) -> str:
     """Statt zu raten: sagen, dass der Begriff unbekannt ist, und anbieten, ihn zu erklären."""
     near = exc.near[:2]
@@ -179,6 +187,14 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         try:
             info = await service.get_state(ref)
         except UnknownDevice as exc:
+            # Kein einzelnes Gerät, aber vielleicht eine Gruppe ("Lichter", "Rollos"): auflisten.
+            infos = [i for i in service.search(ref, 12) if i.type != "sensor"][:8]
+            if infos:
+                text = f"Zu „{ref}“ gibt es: " + ", ".join(
+                    f"{i.name} ({_state_word(i)})" for i in infos
+                )
+                ctx.final_replies.append(text + ".")
+                return text + "."
             ctx.clarify = _unknown_text(exc)
             raise ToolError(str(exc)) from exc
         except DeviceError as exc:

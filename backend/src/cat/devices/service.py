@@ -78,7 +78,8 @@ class DeviceService:
         self._by_item: dict[tuple[str, str], list[DeviceSpec]] = {}
         self._stems: set[str] = set()
         self.lexicon: Lexicon | None = None  # vom Nutzer erklärte Begriffe (intents/lexicon.py)
-        self.recent: list[tuple[str, str, float]] = []  # (id, Befehl, Zeit) zuletzt ausgeführt
+        # (id, Befehl, Zeit, Zustand davor) der zuletzt ausgeführten Befehle
+        self.recent: list[tuple[str, str, float, str | None]] = []
         self.last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
         self._rebuild()
 
@@ -176,7 +177,18 @@ class DeviceService:
             return []
         newest = self.recent[-1][2]
         known = {s.id: s for s in self._all}
-        return [(known[i], c) for i, c, t in self.recent if newest - t < 5.0 and i in known]
+        return [(known[i], c) for i, c, t, _ in self.recent if newest - t < 5.0 and i in known]
+
+    def undo_group(self, max_age_s: float = 900.0) -> list[tuple[DeviceSpec, str | None]]:
+        """Die Geräte der letzten Schaltung mit ihrem Zustand VOR dem Befehl (für "rückgängig")."""
+        now = time.monotonic()
+        if not self.recent or now - self.recent[-1][2] > max_age_s:
+            return []
+        newest = self.recent[-1][2]
+        known = {s.id: s for s in self._all}
+        return [
+            (known[i], prev) for i, _, t, prev in self.recent if newest - t < 5.0 and i in known
+        ]
 
     def has_item(self, backend: str, item: str) -> bool:
         return (backend, item) in self._by_item
@@ -461,8 +473,12 @@ class DeviceService:
                     f"Nicht ausgeführt: Bestätigung für '{spec.name}' fehlt oder wurde abgelehnt."
                 )
 
+        before = self._states.get(spec.id)
         await backend.send(spec, command)
-        self.recent = [*self.recent[-7:], (spec.id, command, time.monotonic())]
+        self.recent = [
+            *self.recent[-7:],
+            (spec.id, command, time.monotonic(), before.state if before else None),
+        ]
         await asyncio.sleep(self.settle_delay)
         info = await self.refresh_one(spec)
         shown = f"{info.state} {info.unit}".strip() if info.state is not None else "unbekannt"

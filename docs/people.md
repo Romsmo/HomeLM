@@ -25,3 +25,12 @@ Ausdrückliche Vorstellungen ("Ich heiße ...") gelten jederzeit. "Ich bin ..." 
 - **Sicherheit:** Die Erkennung dient nur der Personalisierung, **nie** der Freigabe: Bestätigungen für Türen, Schlösser und Tore und alle anderen Prüfungen gelten für jeden gleich. Eine Stimme lässt sich nachahmen oder abspielen.
 - Datenschutz: Fingerabdrücke sind biometrische Daten. Sie liegen nur in `data/people.json` (Rechte 600), werden nie in Notizen, Logs oder an Claude gegeben und nur nach Ja gespeichert. Ohne Zustimmung wird der Fingerabdruck einer unbekannten Stimme nur für die Dauer des Kennenlernens im Arbeitsspeicher gehalten (höchstens 3 Äußerungen).
 - Einstellungen: `CAT_PEOPLE` (alles aus), `CAT_SPEAKER` (nur die Stimmerkennung aus), `CAT_PEOPLE_VOICE_ASK`, `CAT_PEOPLE_CHAT_ASK` (nicht nachfragen), `CAT_PEOPLE_TTL_H`.
+
+## Änderungen nach dem Test vom 20.10. (Phase 23)
+
+- **Namen, die auch Gerätewörter sind** ("Roman", "Marius" sind auch Räume): "Roman." als Antwort auf "Wie heißt du?" gilt jetzt als Name (vorher als Gerätebefehl, das Rollo ging auf). Als Anfrage zählen nur Fragen, Schaltwörter und längere Sätze über Geräte.
+- **"Nein, Roman" nach "Bist du Christian?"** legt Roman an, merkt sich die Stimme als "gehört nicht zu Christian" (`negatives`) und fragt nach der Erlaubnis für Romans Stimme. Eine als falsch gemeldete Stimme wird nicht wieder für Christian gehalten.
+- **"Ich bin Christian"** gilt auch ohne Frage, wenn der Name bekannt ist, oder wenn Cat gar nicht weiß, wer spricht (groß geschriebener Name). "Ich bin müde" bleibt kein Name. Außerdem "Du sollst dir Roman als Nutzer merken" und "Nenn mich Roman".
+- **"Wer bin ich?"**, "Kennst du mich?", "Erkennst du meine Stimme?" werden fest beantwortet ("Du bist Christian, ich habe dich an der Stimme erkannt", "Ich glaube, du bist Christian. Stimmt das?" bei unsicherer Stimme, sonst die Frage nach dem Namen).
+- **Lernphase:** Nach dem Ja zur Stimme lernen die nächsten 3 Äußerungen der Sitzung mit (eine einzige kurze Probe reicht nicht, um Stimmen zu unterscheiden). Der Fingerabdruck ignoriert Ausreißer (eine fremde Stimme im Gespräch zieht ihn nicht weg).
+- **Schwellen:** erkannt ab 0,60 (und 0,08 Abstand zur zweitähnlichsten Person), "unsicher" ab 0,50 (vorher 0,45), darunter unbekannt. Jede Zuordnung steht im Log (`Stimme: bester Treffer ... 0.52 (zweiter ...)`), damit sich die Schwellen an echten Werten einstellen lassen.
