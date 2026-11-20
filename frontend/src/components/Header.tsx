@@ -25,11 +25,14 @@ export default function Header({
   weather,
   provider,
   onLogout,
+  onMobile,
 }: {
   connection: ConnectionStatus;
   weather: WidgetState | undefined;
   provider?: { name: string; offline: boolean } | null;
   onLogout: () => void;
+  /** Wechselt zur Handy-Ansicht (nur Chat). */
+  onMobile?: () => void;
 }) {
   const now = useNow();
   const status = STATUS[connection];
@@ -62,6 +65,11 @@ export default function Header({
         <div className="text-lg font-medium tabular-nums text-cyan-100">
           {now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </div>
+        {onMobile && (
+          <button type="button" onClick={onMobile} className="hud-btn rounded-lg px-3 py-1">
+            Handy-Ansicht
+          </button>
+        )}
         <button
           type="button"
           onClick={onLogout}

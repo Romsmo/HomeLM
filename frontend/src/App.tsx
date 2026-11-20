@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchMe, logout } from "./api";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
+import MobileChat from "./components/mobile/MobileChat";
+import { useUiMode } from "./hooks/useUiMode";
 
 type AuthState = "checking" | "anonymous" | "authenticated";
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>("checking");
+  const [ui, setUi] = useUiMode();
 
   useEffect(() => {
     let cancelled = false;
@@ -36,5 +39,8 @@ export default function App() {
   if (auth === "anonymous") {
     return <Login onSuccess={() => setAuth("authenticated")} />;
   }
-  return <Dashboard onUnreachable={recheck} onLogout={doLogout} />;
+  if (ui === "mobile") {
+    return <MobileChat onUnreachable={recheck} onLogout={doLogout} onDesktop={() => setUi("desktop")} />;
+  }
+  return <Dashboard onUnreachable={recheck} onLogout={doLogout} onMobile={() => setUi("mobile")} />;
 }

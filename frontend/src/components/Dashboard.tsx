@@ -35,9 +35,11 @@ import { renderWidget } from "./widgets/renderWidget";
 export default function Dashboard({
   onUnreachable,
   onLogout,
+  onMobile,
 }: {
   onUnreachable: () => void;
   onLogout: () => void;
+  onMobile?: () => void;
 }) {
   const { state, dispatch, send } = useCat(onUnreachable);
   const connected = state.connection === "open";
@@ -142,6 +144,7 @@ export default function Dashboard({
         weather={state.widgets.weather}
         provider={state.provider}
         onLogout={onLogout}
+        onMobile={onMobile}
       />
 
       {state.notice && (

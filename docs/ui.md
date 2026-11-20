@@ -27,3 +27,17 @@ Dateien aus dem Explorer **irgendwo ins Fenster ziehen** (oder im Widget "Dateie
 - **Das lokale Modell** kann abgelegte Dateien auflisten (`list_files`) und Textdateien lesen (`read_file`): "Fasse die Datei zusammen, die ich gerade abgelegt habe."
 - **Claude** (bei Weitergabe, `docs/claude.md`) sieht den Ordner schreibgeschützt unter `/inbox` und kann auch **Bilder und PDFs** ansehen: "Frag Claude, was in der PDF steht." Dafür muss die Brücke den Ordner eingehängt haben (Compose-Änderung, Brücke neu erzeugen). Was Claude liest, geht an Anthropic.
 - Dateien werden mit `nosniff` und einer Sandbox-CSP ausgeliefert, ein direkt geöffnetes SVG oder HTML führt nichts aus. Upload und Löschen stehen im Audit-Log (`file_upload`, `file_delete`). Hochladen verlangt das Login und einen passenden Origin.
+
+## Handy-Ansicht (nur Chat)
+
+Auf Handys (schmaler Bildschirm, bis 700 px, oder Touch bis 900 px) zeigt Cat keinen Arbeitsraum, sondern **nur den Chat**: Verlauf, Eingabefeld, Mikrofonknopf und ein Leuchtpunkt, der zeigt, ob Cat wartet, zuhört, denkt oder spricht.
+
+- **Mikrofon:** startet von selbst, sobald die Seite offen ist, außer man hat es ausgeschaltet (der Browser merkt sich das). Beim Zurückkehren in die App (anderer Tab, Bildschirm war aus) startet es wieder. Die Aktivierungsphrase gilt wie überall: "Hey Cat ..." und danach 20 s Folgefenster, unadressierte Sprache wird verworfen (`docs/voice.md`). Das Mikrofon geht nur über HTTPS (`https://ai.catscastlecloud.de` oder `https://192.168.0.10:8490` mit installierter CA, `docs/https.md`); der Browser fragt beim ersten Mal nach der Erlaubnis.
+- **Bildschirm anlassen:** Solange das Mikrofon an ist, hält die Seite den Bildschirm wach (Wake Lock, im Menü abschaltbar, Standard an). Das kostet Akku; ohne läuft das Mikrofon nur, solange der Bildschirm an ist.
+- **Tastatur:** Die Ansicht folgt der sichtbaren Höhe (`visualViewport`), das Eingabefeld bleibt über der Tastatur. Eingabe 16 px (kein Zoom auf iOS), Tippflächen mindestens 44 px, Ränder berücksichtigen Notch und Home-Balken.
+- **Grafiken:** Zeigt Cat etwas auf der Stage, erscheint "Grafik oder Anzeige ansehen" über der Eingabe (auch im Menü); sie öffnet die Stage im Vollbild.
+- **Bestätigungen** für Türen und Schlösser kommen als Dialog, im Backend erzwungen wie auf dem Desktop.
+- **Menü** (drei Punkte): Chat exportieren, Chat leeren, Bildschirm anlassen, Desktop-Ansicht, Abmelden.
+- **Ansicht wählen:** `?ui=mobile` oder `?ui=desktop` an die Adresse hängen (wird gemerkt), `?ui=auto` oder "Handy-Ansicht" in der Kopfzeile des Desktops bzw. "Desktop-Ansicht" im Menü schaltet um.
+- **Als App installieren:** Im Browser "Zum Startbildschirm hinzufügen" (Android: "App installieren"). Es gibt Manifest und Symbole (`frontend/public`), die App startet mit `/?ui=mobile`, im Hochformat ohne Browserleiste. Hinter der Caddy-Anmeldung wird das Manifest mit Cookies geladen (`crossorigin="use-credentials"`).
+- **Grenzen:** Nicht auf einem echten Handy getestet (nur Browser-Emulation 375x812 und Tests). Safari/iOS startet Audio erst nach einer Berührung (der erste Tipp aktiviert es), und iOS beendet das Mikrofon im Hintergrund; ein ausgeschalteter Bildschirm hört nicht mehr zu.

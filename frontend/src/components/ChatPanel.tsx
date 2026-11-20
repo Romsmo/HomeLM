@@ -6,12 +6,12 @@ import type { MicControl } from "../hooks/useVoice";
 import MicButton from "./MicButton";
 import type { ChatItem } from "../state/store";
 
-function Bubble({ message }: { message: ChatItem }) {
+export function Bubble({ message, className = "text-sm" }: { message: ChatItem; className?: string }) {
   const mine = message.role === "user";
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+        className={`max-w-[88%] rounded-2xl px-3.5 py-2 leading-relaxed ${className} ${
           mine
             ? "bg-cyan-300/90 text-slate-950"
             : message.role === "system"

@@ -1,29 +1,7 @@
 import type { MicControl } from "../../hooks/useVoice";
 import type { ChatItem } from "../../state/store";
+import { micStatusText } from "../../lib/micText";
 import MicButton from "../MicButton";
-
-function titleCase(text: string): string {
-  return text.replace(/(^|\s)(\p{L})/gu, (_all, space: string, letter: string) => space + letter.toUpperCase());
-}
-
-function micLine(mic: MicControl): string {
-  if (mic.error) return mic.error;
-  switch (mic.state) {
-    case "connecting":
-      return "Mikrofon verbindet …";
-    case "ready":
-      if (mic.windowOpen) return "Ich höre weiter zu, sprich einfach";
-      return mic.wakeHint ? `Sag „${titleCase(mic.wakeHint)}“ und deine Anfrage` : "Ich höre zu, sprich einfach";
-    case "listening":
-      return "Ich höre …";
-    case "thinking":
-      return "Ich denke nach …";
-    case "speaking":
-      return "Cat spricht …";
-    default:
-      return mic.unavailable ?? "Mikrofon aus";
-  }
-}
 
 /** Letzte Worte unter dem Kern (Frage und Antwort) und das Mikrofon: Cat ist immer ansprechbar. */
 export default function Caption({
@@ -57,7 +35,7 @@ export default function Caption({
       <div className="flex items-center gap-3">
         <MicButton mic={mic} className="h-11 w-11 rounded-full" />
         <p className="max-w-[16rem] text-left text-xs text-cyan-200/70" aria-live="polite">
-          {micLine(mic)}
+          {micStatusText(mic)}
           {mic.latency && mic.state === "ready" ? ` · ${mic.latency}` : ""}
         </p>
       </div>

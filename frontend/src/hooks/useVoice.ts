@@ -12,6 +12,8 @@ export interface MicControl {
   /** Gesprächsfenster offen: die nächste Äußerung braucht keine Phrase. */
   windowOpen: boolean;
   toggle: () => void;
+  /** Startet das Mikrofon wieder, wenn es gewollt war und aus ist (z. B. nach dem Zurückkehren in die App). */
+  resume?: () => void;
 }
 
 interface VoiceInfo {
@@ -137,6 +139,13 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
   }, []);
 
   startRef.current = start;
+  const unavailableRef = useRef<string | null>(null);
+
+  const resume = useCallback(() => {
+    if (client.current || !micWanted() || unavailableRef.current !== null) return;
+    retries.current = 0;
+    startRef.current();
+  }, []);
 
   const toggle = useCallback(() => {
     if (client.current) {
@@ -175,5 +184,15 @@ export function useVoice(connected: boolean, autoStart = false): MicControl {
   }, []);
 
   const wakeHint = info?.wake?.required ? (info.wake.phrases[0] ?? null) : null;
-  return { state, unavailable, latency, error, wakeHint, windowOpen: windowOpen && state !== "off", toggle };
+  unavailableRef.current = unavailable;
+  return {
+    state,
+    unavailable,
+    latency,
+    error,
+    wakeHint,
+    windowOpen: windowOpen && state !== "off",
+    toggle,
+    resume,
+  };
 }

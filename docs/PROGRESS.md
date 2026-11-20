@@ -541,3 +541,23 @@ Auftrag des Nutzers (mit Chat-Protokoll vom 20.10.): (1) Stimmen werden nicht au
 - Auf dem Server liegen jetzt die Begriffe/Füllsatz/Notiz aus den Live-Tests (genau die, die Sie im Chat erklärt hatten: Dach-Rollo, Füllsatz "Einen Moment, ist gleich erledigt", Rollo-Regel) und die Testperson "Testperson" (zu löschen im Widget "Gelernt", Reiter "Personen").
 - Das Modell kann weiter Fehler machen (4B-Modell); die Sicherungen fangen die bekannten Fälle, nicht alle denkbaren. Wenn etwas Falsches passiert: "Mach das rückgängig".
 - Rollback: `CAT_TEACH=false` schaltet das Beibringen ab; `git revert` der Commits dieser Phase.
+
+## Phase 24: Handy-Version (2026-11-20)
+
+**Auftrag:** Eine mobile Version fuer Handys, die nur einen Chat hat, automatisch auf das Mikrofon hoert (wenn nicht deaktiviert) und auf das Handy optimiert ist.
+
+**Gebaut** (nur Frontend, Details `docs/ui.md`, Abschnitt "Handy-Ansicht")
+- `components/mobile/MobileChat.tsx`: Vollbild-Chat mit Kopfzeile (Verbindung, Menue), Verlauf, Leuchtpunkt (`VoiceOrb`) fuer den Sprachzustand, Eingabe mit Mikrofon- und Sendeknopf, Stage im Vollbild-Blatt, Bestaetigungsdialog. `useVoice(connected, true)` startet das Mikrofon selbst, ausser der Nutzer hat es ausgeschaltet (`cat.mic`); `resume` startet es nach Rueckkehr in die App wieder.
+- `useUiMode`: waehlt Handy- oder Desktop-Ansicht (`?ui=`, gemerkt in `cat.ui`, sonst Bildschirmgroesse); Umschalter im Menue und in der Desktop-Kopfzeile.
+- `usePhone`: sichtbare Hoehe (Tastatur), Wake Lock (Bildschirm bleibt an, abschaltbar).
+- `index.html`: `viewport-fit=cover`, `interactive-widget`, Theme-Farbe; PWA: `manifest.webmanifest` und Symbole (`public/`, erzeugt mit einem eigenen kleinen PNG-Skript, kein neues Paket).
+- Server unveraendert: Die Aktivierungsphrase gilt auch am Handy, unadressierte Sprache wird verworfen.
+
+**Abnahme**
+- Frontend 172 Tests (+19, darunter `MobileChat`, `useUiMode`), `tsc` und `vite build` sauber.
+- Lokal mit Backend und Browser-Emulation 375x812 geprueft: Login, Chat-Ansicht, Menue, kein horizontales Scrollen, Tippflaechen mindestens 44 px, Eingabe 16 px; Manifest und Symbole werden mit richtigen Typen ausgeliefert.
+- **Nicht geprueft:** echtes Handy (Mikrofon-Erlaubnis, Tastaturverhalten auf iOS/Android, Wake Lock, Installation als App), Aussehen der PNG-Symbole auf dem Startbildschirm, Auslieferung hinter Caddy-Anmeldung.
+
+**Hinweise**
+- Das Mikrofon braucht HTTPS (`https://ai.catscastlecloud.de`). Ohne zeigt die Ansicht den Grund an, der Chat per Text geht trotzdem.
+- Rollback: `git revert` des Commits dieser Phase; die Desktop-Ansicht ist unveraendert, `?ui=desktop` umgeht die Handy-Ansicht sofort.
