@@ -6,17 +6,18 @@ Cat ist über Caddy unter `https://ai.catscastlecloud.de` erreichbar, mit einem 
 
 Auf Anweisung des Nutzers ist Cat **nicht mehr aus dem Internet erreichbar** (das stellt die Regel "Cat nicht aus dem Internet erreichbar", CLAUDE.md Abschnitt 4, wieder her) und es gibt **nur noch die Anmeldung von Cat selbst**, nicht mehr zusätzlich die Browser-Abfrage von Caddy. Zwei unabhängige Sperren:
 
-1. **Caddy** (`ai.catscastlecloud.de`-Block): `@extern not remote_ip 192.168.0.0/16` antwortet mit 403. Erlaubt ist alles in `192.168.0.0/16`, also der Router `192.168.1.1` mit seinem Netz (`192.168.1.x`) und das Netz des Servers (`192.168.0.x`). Das Skript `scripts/caddy_lan_only.sh` setzt das (braucht sudo, Ablauf unten) und entfernt `basic_auth`.
-2. **Cat selbst** (`CAT_LAN_ONLY=true` in der `.env`, `backend/src/cat/lan.py`): Anfragen, deren Client-IP nicht privat ist (Internet, unbekannt), bekommen 403, auch WebSockets. Die IP ist hinter Caddy die echte, weil `CAT_TRUSTED_PROXIES` den Proxy nennt. Das fängt eine falsch eingestellte Caddyfile ab; ohne die Sperre in Caddy wäre sonst Cats Login die einzige Hürde.
+1. **Cat selbst** (`CAT_LAN_ONLY=true`, `backend/src/cat/lan.py`): Anfragen, deren Client-IP nicht zum Heimnetz gehört, bekommen 403, auch WebSockets (fail closed). Die IP ist hinter Caddy die echte, weil `CAT_TRUSTED_PROXIES` den Proxy nennt und Caddy fremde `X-Forwarded-For`-Header nicht glaubt (Standard).
+2. **Heimnetz heißt:** alle privaten Adressen (`192.168.x.x` mit dem Router `192.168.1.1` und seinem Netz, `10.x`, `172.16-31.x`, Loopback) **plus die aufgelöste öffentliche Adresse der Domain** (`CAT_LAN_TRUSTED_HOSTS=ai.catscastlecloud.de`). Grund: Ruft ein Gerät im Heimnetz die Domain auf, spiegelt der Router die Anfrage über die öffentliche Adresse des Anschlusses zurück (NAT-Loopback), und Caddy sieht diese als Absender. Cat löst den Namen alle 5 Minuten neu auf, folgt also einer wechselnden IP; schlägt das DNS fehl, bleibt die letzte Liste. Aus dem Internet kann niemand mit der Adresse **deines** Anschlusses als Absender kommen. Weitere feste Adressen: `CAT_LAN_TRUSTED_IPS`.
+3. **Caddy** (`ai.catscastlecloud.de`-Block): nur Zertifikat, Proxy und Sicherheitsheader, **keine** IP-Regel und **kein** `basic_auth` mehr. (Zwischenstand 21.11. vormittags: Caddy hatte `@extern not remote_ip 192.168.0.0/16`; das blockte die Rückspiegelung der Domain und wurde entfernt, `scripts/caddy_lan_only.sh` ist damit überholt und nur noch für den Rückbau des `basic_auth` gedacht.)
 
 **Gut zu wissen**
-- **Privat** zählt: `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, Loopback, Link-Local, IPv6 `fd..`/`fe80`. Eine globale IPv6-Adresse im Heimnetz gilt als "außen" (403); dann die IPv4-Adresse nutzen.
-- **Sieht Caddy nur die Router-Adresse?** Wenn ein Gerät im Heimnetz `ai.catscastlecloud.de` aufruft, geht die Anfrage über die öffentliche IP und kommt per NAT-Loopback des Routers zurück. Je nach Router sieht Caddy dann die Adresse des Geräts, die Router-Adresse (`192.168.1.1`, erlaubt) oder die öffentliche IP des Anschlusses (403). **Am 2026-11-21 gemessen: Es gibt 403** (ein PC im Heimnetz sah beim Aufruf per Domain die öffentliche Adresse als Quelle). Darum entweder im Heimnetz-DNS `ai.catscastlecloud.de` auf `192.168.0.10` legen (Router oder DNS-Server) oder den Server direkt per `https://192.168.0.10:8490` nutzen (`docs/https.md`).
-- **Unterwegs** (Mobilfunk) geht Cat nun nicht mehr. Wer von außen will, nutzt ein VPN ins Heimnetz.
-- Cats Anmelde-Sperre (5 Fehlversuche je IP, 60 s) bleibt; die globale Sperre für Zugriffe von außen ist damit praktisch gegenstandslos.
-- Die PWA-Symbole und das Manifest brauchen keine Caddy-Anmeldung mehr; `crossorigin="use-credentials"` im `index.html` schadet nicht.
+- Die Domain geht damit **im Heimnetz mit dem echten Zertifikat** (Mikrofon ohne CA-Installation). `https://192.168.0.10:8490` und `http://192.168.0.10:8090` gehen weiter.
+- Eine globale IPv6-Adresse im Heimnetz gilt als "außen" (403); dann die IPv4-Adresse nutzen.
+- **Unterwegs** (Mobilfunk) geht Cat nicht. Wer von außen will, nutzt ein VPN ins Heimnetz.
+- Cats Anmelde-Sperre (5 Fehlversuche je IP, 60 s) bleibt.
+- Nicht geprüft werden konnte ein Zugriff von einer echten Außenadresse (kein Gerät außerhalb); getestet ist die Entscheidung mit simulierten Quell-IPs über den Proxy-Weg (8.8.8.8 und 217.88.249.83: 403; Heimnetz und die eigene öffentliche Adresse: 200) und mit Tests. Bitte einmal mit dem Handy im Mobilfunk gegenprüfen (erwartet: 403).
 
-Rollback: `sudo bash /srv/homelm/scripts/caddy_lan_only.sh --rollback` stellt die letzte Sicherung `Caddyfile.bak-lan-*` wieder her (mit Passwortabfrage von Caddy und ohne LAN-Sperre). Cats eigene Sperre abschalten: `CAT_LAN_ONLY=false` in `/srv/homelm/.env`, `docker compose --profile offline up -d --no-build backend`.
+Rollback: `CAT_LAN_ONLY=false` in `/srv/homelm/.env` (Cat offen, nur noch das Login) und `docker compose --profile offline up -d --no-build backend`. Die Caddyfile-Sicherungen liegen als `Caddyfile.bak-lan-*` (vor der Umstellung: Passwortabfrage von Caddy, keine Sperre) und `Caddyfile.bak-lan2-*` (mit der starren Sperre) in `/srv/docker/caddy`.
 
 ## Frühere Variante (Internet, mit zweiter Hürde)
 
