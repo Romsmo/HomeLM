@@ -48,6 +48,21 @@ openHAB legt für ein Gerät oft **zwei Items** an: ein Item mit schönem Etiket
 - Befehle gehen an **beide** Items (an das ungenutzte ist das wirkungslos, an das echte kommt er an).
 - Ähnliche Lampen (`Hue_Lampe_Terrasse_...` und `Hue_Lampe_Wohnzimmer_...`) werden nicht verwechselt: Dafür müsste ein Name eine Teilfolge des anderen sein.
 
+### Kontext der letzten Anfragen und der Nutzer (seit 2026-11-21)
+
+Cat merkt sich die **letzte Schaltung** kurz (`CAT_CONTEXT_TTL_S`, Standard 600 Sekunden, danach wird sie vergessen) und versteht damit Folgeanfragen ohne Modell (`intents/teach.py`, Handler `_followup`):
+
+| Du sagst (nach "Schließe die Markisen") | Cat tut |
+|---|---|
+| "Mach sie doch wieder auf", "Mach alle auf", "Ich meinte mach alle auf" | die Geräte der letzten Schaltung (alle drei Markisen) bekommen den neuen Befehl |
+| "Mach sie wieder" (ohne Richtung) | das Gegenteil des letzten Befehls |
+| nach "Markise West auf": "Ost und Nord auch!", "Markise Ost und Markise Nord auch" | derselbe Befehl (`up`) an die genannten Geräte; "Ost" findet "Markise Ost" unter den Geräten derselben Sorte im Raum |
+| nach "Markise Nord zu": "Mach alle auf" | "alle" meint alle Geräte gleicher Sorte im Raum (alle Markisen, nicht die Rollos) |
+
+Nie geraten: Ist ein Name nicht eindeutig oder nennt ein Satz ein anderes Gerät, entscheidet wie bisher das Modell. Türen, Schlösser und Tore laufen nie so (dort immer ein vollständiger Befehl). Verneinungen und Rückblicke ("Ich hab nie gesagt ...") gehen an die Entschuldigung. Nach Ablauf der Zeit gibt es keinen Kontext mehr, "Mach sie wieder auf" geht dann an das Modell.
+
+**Der Nutzer:** Mit erkanntem Sprecher (Stimme oder Vorstellung, `docs/people.md`) meint "mein Rollo" das Gerät dieser Person: Cat probiert zuerst "Rollo Roman" (Name statt "mein") und dann das Wort unverändert. Ohne bekannten Sprecher fragt Cat nach, welches Rollo gemeint ist.
+
 ### Tun oder nur lesen? (seit 2026-11-21)
 
 Cat entscheidet bei jeder Nachricht zuerst, **was zu tun ist**, und handelt danach (`intent_kind` in `intents/text.py`, erzwungen im Backend in `agent/loop.py`, nicht nur im Prompt):

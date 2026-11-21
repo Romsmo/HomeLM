@@ -162,6 +162,7 @@ class RoutedResponder:
         ctx = ToolContext(emit=self._state.emit, stage=self._state.stage)
         ctx.device_related = self._state.devices.mentions_device(question)
         speaker = self._state.current_speaker
+        ctx.speaker = speaker.name if speaker else ""
         hint = self._state.devices.last_device_hint()
         if ctx.device_related:
             # Geräteanfragen brauchen weder Uhrzeit noch Erinnerungen: Jedes Token davon kostet

@@ -9,6 +9,9 @@ erkannt und fest verarbeitet (schnell, ohne Fehlschaltung):
   Geräte eindeutig gefunden werden und der Begriff selbst kein Gerät ist.
 - **Korrigieren:** "Ähm, bitte schließen, meinte ich." wendet das neue Wort auf die Geräte der
   letzten Schaltung an. Nie bei Türen, Schlössern oder Toren (dort immer ein vollständiger Befehl).
+- **Folgeanfragen aus dem Kontext:** "Mach sie wieder auf", "Ich meinte: alle", "Ost und Nord
+  auch!" beziehen sich auf die letzte Schaltung (Kurzzeit-Gedächtnis, verfällt nach
+  `CAT_CONTEXT_TTL_S`, Standard 10 Minuten). Nie bei Türen, Schlössern oder Toren.
 - **Merken:** "Merk dir, dass ..." oder "..., merk dir das" legt eine Notiz an.
 - **Füllsatz aufnehmen:** "Nimm folgenden Füllsatz auf: ... (bei Schalten)".
 - **Nachfragen:** "Was ist ein Dachrollo?", "Welche Begriffe kennst du?"
@@ -27,7 +30,7 @@ from cat.devices.service import DeviceService
 from cat.intents.fillers import CATEGORIES, FillerBank, user_phrase
 from cat.intents.lexicon import Lexicon
 from cat.intents.replies import confirm_text
-from cat.intents.text import fold, tokenize
+from cat.intents.text import FILLERS, fold, is_question, negated_or_reported, tokenize
 from cat.memory.notes import NoteError
 from cat.memory.service import MemoryService
 from cat.people.parse import parse_yes_no
@@ -86,6 +89,10 @@ _WHICH_TERMS = re.compile(
     re.IGNORECASE,
 )
 
+_ALSO_WORDS = frozenset("auch ebenso ebenfalls genauso gleichfalls".split())
+_REFERENT_WORDS = frozenset("sie es ihn alle alles beide beiden dieselben diese dasselbe".split())
+_ALL_WORDS = frozenset("alle alles beide beiden".split())
+_GLUE_WORDS = frozenset("von bei mit noch dort da hier".split())
 _PERSONAL = frozenset("ich mein meine meinen meinem meiner wir uns unser unsere".split())
 _UNDO = re.compile(
     r"r(?:ü|ue)ckg(?:ä|ae)ngig|stell\w*\s+(?:es|das|sie|ihn)\s+wieder\s+(?:so\s+)?(?:hin|her|zur(?:ü|ue)ck)|"
@@ -149,6 +156,7 @@ class TeachService:
             self._filler,
             self._explain,
             self._correction,
+            self._followup,
             self._remember,
             self._alias,
         ):
@@ -317,6 +325,109 @@ class TeachService:
         names = _join([known[i] for i in term.ids if i in known])
         return f"„{term.term}“ habe ich von dir als {names} gelernt."
 
+    # --- Folgeanfragen aus dem Kontext ---
+
+    def _scope(
+        self, group: list[tuple[DeviceSpec, str]], tokens: list[str]
+    ) -> list[tuple[DeviceSpec, str]]:
+        """ "Alle" nach einer Schaltung an nur ein Gerät meint alle der gleichen Sorte im Raum."""
+        if not set(tokens) & _ALL_WORDS or len(group) != 1:
+            return group
+        family = self._devices.context_family(group)
+        if len(family) <= 1:
+            return group
+        return [(s, group[0][1]) for s in family]
+
+    async def _followup(self, text: str) -> str | None:
+        """Auf die letzte Schaltung bezogen: "Mach sie wieder auf", "Alle auch", "Ost und Nord auch"
+
+        Nur mit frischem Kontext (letzte Schaltung nicht älter als `CAT_CONTEXT_TTL_S`), kurzen
+        Sätzen und ohne Verneinung. Alles andere läuft wie bisher über das Modell."""
+        if len(text.split()) > 12 or negated_or_reported(text):
+            return None
+        tokens = tokenize(text)
+        if not tokens:
+            return None
+        group = self._devices.last_group()
+        if not group:
+            return None
+        if set(tokens) & _ALSO_WORDS:
+            return await self._also(text, tokens, group)
+        referent = bool(set(tokens) & _REFERENT_WORDS)
+        command = _command_word(tokens, text)
+        again = bool(set(tokens) & {"wieder", "zurueck", "umgekehrt"})
+        if (
+            not referent
+            or not (command or again)
+            or (is_question(text) and "?" not in text)
+            or self._devices.mentions_device(text)
+        ):
+            return None
+        group = self._scope(group, tokens)
+        pairs: list[tuple[DeviceSpec, str | None]] = []
+        for spec, last in group:
+            wanted = _fit(spec, command) if command else _opposite(spec, last)
+            pairs.append((spec, wanted))
+        return await self._run(pairs, "followup", text)
+
+    async def _also(
+        self, text: str, tokens: list[str], group: list[tuple[DeviceSpec, str]]
+    ) -> str | None:
+        """ "Ost und Nord auch": denselben Befehl wie eben an die genannten Geräte."""
+        command = _command_word(tokens, text)
+        parts = [p for p in _SPLIT.split(text.strip().rstrip(".!?")) if p.strip()]
+        family = self._devices.context_family(group)
+        targets: list[DeviceSpec] = []
+        for part in parts:
+            words = [
+                t
+                for t in tokenize(part)
+                if t not in FILLERS and t not in _ALSO_WORDS and t not in _GLUE_WORDS
+            ]
+            if not words:
+                continue
+            found = [s for s in family if _names_match(s, words)]
+            if not found:
+                try:
+                    spec = self._devices.resolve(_ARTICLE.sub("", part.replace("auch", "").strip()))
+                except DeviceError:
+                    return None
+                if not _covers(spec, " ".join(words)):
+                    return None
+                found = [spec]
+            if len(found) != 1:
+                return None  # nicht raten: das Modell oder eine Rückfrage übernimmt
+            if found[0] not in targets:
+                targets.append(found[0])
+        if not targets:
+            return None
+        last = group[0][1]
+        pairs = [(s, _fit(s, command) if command else _carry(s, last)) for s in targets]
+        return await self._run(pairs, "followup", text)
+
+    async def _run(
+        self, pairs: list[tuple[DeviceSpec, str | None]], source: str, text: str
+    ) -> str | None:
+        lines: list[str] = []
+        for spec, wanted in pairs:
+            if spec.effective_risk == "high":
+                return (
+                    "Bei Türen, Schlössern und Toren brauche ich immer einen vollständigen Befehl."
+                )
+            if wanted is None:
+                continue
+            try:
+                result = await self._devices.command_detailed(spec.id, wanted, source=source)
+            except DeviceError as exc:
+                lines.append(str(exc))
+                continue
+            lines.append(confirm_text(result.spec, result.command))
+        if not lines:
+            return None  # passt nicht zu den Geräten von eben: normaler Weg
+        if self._audit is not None:
+            await self._audit.record(source, {"text": text}, " ".join(lines), source="teach")
+        return "\n".join(lines)
+
     # --- Korrigieren ---
 
     async def _correction(self, text: str) -> str | None:
@@ -329,6 +440,7 @@ class TeachService:
         group = self._devices.last_group()
         if not group:
             return "Ich weiß gerade nicht, welches Gerät du meinst. Sag es bitte als ganzen Befehl."
+        group = self._scope(group, tokens)
         lines: list[str] = []
         for spec, _ in group:
             if spec.effective_risk == "high":
@@ -439,4 +551,31 @@ def _fit(spec: DeviceSpec, command: str) -> str | None:
         return {"close": "down", "open": "up"}.get(command)
     if spec.type in ("light", "switch", "dimmer"):
         return command if command in ("on", "off") else None
+    return None
+
+
+def _names_match(spec: DeviceSpec, words: list[str]) -> bool:
+    """Passen alle Wörter ("Ost", "Markise") zum Gerätenamen oder Raum (auf den Anfang genau)?"""
+    have = tokenize(f"{spec.name} {spec.room}")
+    return all(any(h.startswith(w) or w.startswith(h) for h in have) for w in words)
+
+
+def _carry(spec: DeviceSpec, last: str) -> str | None:
+    """Den Befehl von eben für dieses Gerät, wenn er zum Typ passt (up/down, on/off, Zahl)."""
+    if last in ("up", "down"):
+        return last if spec.type == "shutter" else None
+    if last in ("on", "off"):
+        return last if spec.type in ("light", "switch", "dimmer") else None
+    if last.replace(".", "", 1).isdigit():
+        return last if spec.type in ("shutter", "dimmer", "thermostat") else None
+    return None
+
+
+def _opposite(spec: DeviceSpec, last: str) -> str | None:
+    """Das Gegenteil des letzten Befehls ("wieder auf" nach "zu")."""
+    flip = {"up": "down", "down": "up", "on": "off", "off": "on"}
+    if last in flip:
+        return _carry(spec, flip[last])
+    if spec.type == "shutter" and last.replace(".", "", 1).isdigit():
+        return "up" if float(last) >= 50 else "down"
     return None

@@ -79,6 +79,7 @@ class AppState:
         self.reflector = Reflector(settings.reflect_idle_s)
         self.lexicon = Lexicon(settings.lexicon_file)
         self.devices.lexicon = self.lexicon
+        self.devices.context_ttl_s = settings.context_ttl_s
         self.current_speaker: Person | None = None  # wer in der laufenden Runde spricht
         self.teach = TeachService(
             self.devices,

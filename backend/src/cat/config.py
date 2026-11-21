@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     speaker_uncertain: float = 0.50  # darunter unbekannt, dazwischen fragt Cat nach
     speaker_margin: float = 0.08  # Abstand zur zweitähnlichsten Person
     reflect: bool = True
+    # Wie lange sich Cat die letzte Schaltung für Folgeanfragen merkt ("mach sie wieder auf").
+    context_ttl_s: float = 600.0
     teach: bool = True  # Erklärungen, Korrekturen, "merk dir" vor dem Modell (intents/teach.py)
     reflect_idle_s: float = 60.0
     knowledge_cache: bool = True

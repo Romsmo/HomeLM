@@ -4,13 +4,26 @@ from typing import Any
 
 from cat.agent.tools import Tool, ToolContext, ToolError
 from cat.devices.commands import DeviceError, UnknownDevice, is_controllable
-from cat.devices.models import DeviceInfo
+from cat.devices.models import DeviceInfo, DeviceSpec
 from cat.devices.service import SHUTTER_STEMS, DeviceService
 from cat.intents.replies import confirm_text, state_line
 from cat.intents.text import fold, shutter_conflict, shutter_intent, tokenize
 from cat.ws.protocol import StageShow
 
 LIST_LIMIT = 25
+_POSSESSIVE = frozenset("mein meine meinen meinem meiner meines".split())
+
+
+def personal_refs(ref: str, speaker: str) -> list[str]:
+    """Namen, die probiert werden: Mit erkanntem Sprecher zuerst "mein Rollo" -> "Rollo Roman"
+    (Name der Person statt "mein"), danach unverändert. Ohne "mein" oder ohne Sprecher nur `ref`."""
+    words = ref.split()
+    kept = [w for w in words if fold(w).strip(".,!?") not in _POSSESSIVE]
+    if not speaker or len(kept) == len(words) or not kept:
+        return [ref]
+    return [" ".join([*kept, speaker]), ref]
+
+
 FULL_ROWS = 6  # bis dahin die vollständige Zeile (mit id), darüber kurz
 
 _TYPE_DE = {
@@ -97,6 +110,29 @@ def _unknown_text(exc: UnknownDevice) -> str:
         f"„{exc.ref}“ kenne ich nicht, deshalb habe ich nichts gemacht. "
         f"Erkläre es mir, zum Beispiel: „{example}“."
     )
+
+
+async def _first(refs: list[str], call: Any) -> Any:
+    """Probiert die Namen der Reihe nach; der erste Treffer gilt, sonst der Fehler des letzten."""
+    error: DeviceError | None = None
+    for candidate in refs:
+        try:
+            return await call(candidate)
+        except DeviceError as exc:
+            error = exc
+    assert error is not None
+    raise error
+
+
+def _resolve_personal(service: DeviceService, ref: str, speaker: str) -> list[DeviceSpec]:
+    error: DeviceError | None = None
+    for candidate in personal_refs(ref, speaker):
+        try:
+            return service.resolve_many(candidate, control=True)
+        except DeviceError as exc:
+            error = exc
+    assert error is not None
+    raise error
 
 
 def build_device_tools(service: DeviceService) -> list[Tool]:
@@ -186,11 +222,11 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
             raise ToolError("Parameter 'device' fehlt.")
         try:
             try:
-                info = await service.get_state(ref)
+                info = await _first(personal_refs(ref, ctx.speaker), lambda r: service.get_state(r))
             except UnknownDevice:
                 if not await service.refresh_catalog():  # neu in openHAB? sofort nachsehen
                     raise
-                info = await service.get_state(ref)
+                info = await _first(personal_refs(ref, ctx.speaker), lambda r: service.get_state(r))
         except UnknownDevice as exc:
             # Kein einzelnes Gerät, aber vielleicht eine Gruppe ("Lichter", "Rollos"): auflisten.
             infos = [i for i in service.search(ref, 12) if i.type != "sensor"][:8]
@@ -225,7 +261,7 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         refreshed = False
         while True:
             try:
-                targets = service.resolve_many(ref, control=True)
+                targets = _resolve_personal(service, ref, ctx.speaker)
                 if not any(is_controllable(t.type) for t in targets) and not refreshed:
                     # Nur ein Sensor gefunden: vielleicht gibt es das Gerät in openHAB neu.
                     refreshed = True

@@ -80,7 +80,11 @@ class DeviceService:
         self.lexicon: Lexicon | None = None  # vom Nutzer erklärte Begriffe (intents/lexicon.py)
         # (id, Befehl, Zeit, Zustand davor) der zuletzt ausgeführten Befehle
         self.recent: list[tuple[str, str, float, str | None]] = []
-        self.last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
+        # Kurzzeit-Gedächtnis des Gesprächs: Folgeanfragen ("mach sie wieder auf", "Ost auch")
+        # beziehen sich auf die letzte Schaltung. Es verfällt nach `context_ttl_s` Sekunden.
+        self.context_ttl_s = 600.0
+        self._last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
+        self._last_device_at = 0.0
         # Vom openHAB-Plugin gesetzt: liest alle Items neu (siehe refresh_catalog).
         self.rediscover: Callable[[], Awaitable[int]] | None = None
         self._last_catalog_refresh = -1e9
@@ -208,24 +212,59 @@ class DeviceService:
             return found
         return []
 
-    def last_group(self, max_age_s: float = 600.0) -> list[tuple[DeviceSpec, str]]:
-        """Die Geräte der letzten Schaltung (alle, die kurz hintereinander kamen) mit Befehl."""
+    @property
+    def last_device(self) -> str | None:
+        """Das zuletzt bediente oder abgefragte Gerät; nach `context_ttl_s` vergessen."""
+        if self._last_device and time.monotonic() - self._last_device_at > self.context_ttl_s:
+            self._last_device = None
+        return self._last_device
+
+    @last_device.setter
+    def last_device(self, device_id: str | None) -> None:
+        self._last_device = device_id
+        self._last_device_at = time.monotonic()
+
+    def forget_context(self) -> None:
+        """Vergisst das Kurzzeit-Gedächtnis (letzte Schaltungen und letztes Gerät)."""
+        self.recent = []
+        self._last_device = None
+
+    def _prune_context(self) -> None:
+        """Wirft Schaltungen weg, die länger als `context_ttl_s` her sind."""
         now = time.monotonic()
-        if not self.recent or now - self.recent[-1][2] > max_age_s:
+        self.recent = [r for r in self.recent if now - r[2] <= self.context_ttl_s]
+
+    def context_family(self, group: list[tuple[DeviceSpec, str]]) -> list[DeviceSpec]:
+        """Geräte "derselben Sorte" wie die der letzten Schaltung: gleicher Typ und Raum
+        ("die anderen Markisen"). Technik-Zwillinge und unlistete Geräte zählen nicht."""
+        hidden = {t for s in self._all for t in s.twins}
+        kinds = {(s.type, s.room) for s, _ in group}
+        return [
+            s for s in self._all if (s.type, s.room) in kinds and s.listed and s.item not in hidden
+        ]
+
+    def last_group(self, max_age_s: float | None = None) -> list[tuple[DeviceSpec, str]]:
+        """Die Geräte der letzten Schaltung (alle, die kurz hintereinander kamen) mit Befehl."""
+        self._prune_context()
+        now = time.monotonic()
+        limit = self.context_ttl_s if max_age_s is None else max_age_s
+        if not self.recent or now - self.recent[-1][2] > limit:
             return []
         newest = self.recent[-1][2]
         known = {s.id: s for s in self._all}
-        return [(known[i], c) for i, c, t, _ in self.recent if newest - t < 5.0 and i in known]
+        return [(known[i], c) for i, c, t, _ in self.recent if newest - t < 8.0 and i in known]
 
-    def undo_group(self, max_age_s: float = 900.0) -> list[tuple[DeviceSpec, str | None]]:
+    def undo_group(self, max_age_s: float | None = None) -> list[tuple[DeviceSpec, str | None]]:
         """Die Geräte der letzten Schaltung mit ihrem Zustand VOR dem Befehl (für "rückgängig")."""
+        self._prune_context()
         now = time.monotonic()
-        if not self.recent or now - self.recent[-1][2] > max_age_s:
+        limit = self.context_ttl_s if max_age_s is None else max_age_s
+        if not self.recent or now - self.recent[-1][2] > limit:
             return []
         newest = self.recent[-1][2]
         known = {s.id: s for s in self._all}
         return [
-            (known[i], prev) for i, _, t, prev in self.recent if newest - t < 5.0 and i in known
+            (known[i], prev) for i, _, t, prev in self.recent if newest - t < 8.0 and i in known
         ]
 
     def has_item(self, backend: str, item: str) -> bool:

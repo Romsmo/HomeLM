@@ -44,6 +44,9 @@ class ToolContext:
     device_related: bool = False
     # Was der Nutzer in dieser Runde gesagt hat (für Prüfungen der Werkzeuge).
     user_text: str = ""
+    # Wer spricht (erkannt an der Stimme oder vorgestellt), sonst leer: "mein Rollo" meint
+    # dann das Gerät dieser Person (devices/tools.py).
+    speaker: str = ""
     # Ein Schaltbefehl wurde abgewiesen, weil der Text keiner war: Der Agent fragt nach.
     blocked: bool = False
     # Wie oft set_state bei "Sonstiges" (weder Befehl noch Frage) abgewiesen wurde: beim ersten
