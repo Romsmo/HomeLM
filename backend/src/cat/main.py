@@ -15,6 +15,7 @@ from cat import (
     api_lexicon,
     api_memory,
     api_people,
+    api_tls,
     auth,
 )
 from cat.agent.responder import build_local_provider, build_responder
@@ -207,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_fillers.router)
     app.include_router(api_memory.router)
     app.include_router(api_people.router)
+    app.include_router(api_tls.router)
     app.include_router(api_lexicon.router)
     app.include_router(endpoint.router)
     app.include_router(voice_ws.router)

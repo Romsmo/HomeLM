@@ -10,6 +10,7 @@ import MicButton from "../MicButton";
 import Stage from "../Stage";
 import ConfirmDialog from "../devices/ConfirmDialog";
 import MobileMenu from "./MobileMenu";
+import SecureHint from "./SecureHint";
 import VoiceOrb from "./VoiceOrb";
 
 const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
@@ -134,6 +135,8 @@ export default function MobileChat({
           </button>
         </div>
       )}
+
+      <SecureHint />
 
       <div
         role="log"

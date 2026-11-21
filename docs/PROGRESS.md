@@ -582,3 +582,5 @@ Auftrag des Nutzers (mit Chat-Protokoll vom 20.10.): (1) Stimmen werden nicht au
 - NAT-Loopback: Sieht Caddy für Geräte im Heimnetz die öffentliche IP statt der Geräteadresse, gibt es 403 (siehe `docs/public-access.md`, dort die Abhilfe).
 - Unterwegs geht Cat nicht mehr; dafür braucht es ein VPN ins Heimnetz.
 - Rollback: `sudo bash scripts/caddy_lan_only.sh --rollback`; `CAT_LAN_ONLY=false`.
+
+**Nachtrag: HTTPS am Handy.** Der HTTPS-Port 8490 lief schon (Phase 10); es fehlte nur, dass ein Gerät der Heimnetz-CA vertraut. Neu: `GET /api/tls` und `GET /api/ca.crt` (nur nach Login; die öffentliche `ca.crt` neben dem Serverzertifikat, nie ein Schlüssel; `CAT_TLS_HOST_PORT` als `tls_host_port`) und in der Handy-Ansicht die Karte `SecureHint` (nur auf unsicherer Seite): "Zertifikat laden" und "HTTPS öffnen". Tests: Backend +4, Frontend +5 (177). Nicht geprüft: die Installation auf einem echten Handy.

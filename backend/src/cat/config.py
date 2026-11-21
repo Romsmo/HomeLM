@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     tls_cert: Path | None = None
     tls_key: Path | None = None
     tls_port: int = 8443
+    # Der Port, unter dem der HTTPS-Port von außen erreichbar ist (Compose: CAT_TLS_HOST_PORT).
+    # Nur für den Hinweis in der Oberfläche, wohin sie für das Mikrofon wechseln soll.
+    tls_host_port: int = 8490
     # Reverse-Proxy (Caddy), dem Cat die Client-IP und das Schema (X-Forwarded-*) glaubt. Komma-
     # getrennte IPs oder Netze, z. B. 172.19.0.0/16 (das Docker-Netz von Caddy). Leer = niemand.
     # Ohne das sähe Cat hinter dem Proxy nur die Proxy-IP (Anmelde-Sperre träfe alle gemeinsam).

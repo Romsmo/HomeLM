@@ -9,6 +9,15 @@ Browser geben das Mikrofon nur auf `https://` oder `localhost` frei. Cat lauscht
 
 Beide Adressen sind dieselbe Cat-Instanz (ein Chatverlauf, ein Zustand). Kein Eingriff in Caddy, Nextcloud, Firewall oder Router: der Port ist nur an `192.168.0.10` gebunden und nicht über Caddy erreichbar. Port 8443 war schon von openHAB belegt, darum 8490 (`CAT_TLS_HOST_PORT`). Ob Ihr Router 8490 ins Internet weiterleitet, kann ich von hier nicht prüfen; normalerweise leitet er nur, was Sie eingerichtet haben (80/443). Das Login bleibt in jedem Fall Pflicht.
 
+## Am Handy in zwei Schritten (seit 2026-11-21)
+
+Öffnen Sie Cat wie gewohnt über `http://192.168.0.10:8090` und melden Sie sich an. Ohne HTTPS zeigt die Handy-Ansicht über dem Chat eine Karte "Das Mikrofon geht nur über HTTPS" mit zwei Knöpfen:
+
+1. **Zertifikat laden** (`/api/ca.crt`, nur nach dem Login, nur die öffentliche CA ohne Schlüssel) und installieren, einmal je Gerät (Anleitung unten).
+2. **HTTPS öffnen**: dieselbe Seite über `https://192.168.0.10:8490` (der Port steht in `CAT_TLS_HOST_PORT`). Dort ist das Schloss grün und das Mikrofon fragt um Erlaubnis. Das Login gilt dort neu (anderer Ursprung, eigenes Cookie).
+
+Alternative ohne Zertifikat auf jedem Gerät: im Router `ai.catscastlecloud.de` auf `192.168.0.10` legen (docs/public-access.md); dann gilt das echte Zertifikat der Domain.
+
 ## Einmal je Gerät: die CA installieren
 
 Die Datei `ca.crt` ist öffentlich und unkritisch (kein Schlüssel). Sie liegt auf dem Server in `/srv/homelm/data/certs/ca.crt`. **Nur diese Datei** auf Geräte installieren, die Ihnen gehören.
