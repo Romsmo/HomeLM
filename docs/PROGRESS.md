@@ -574,7 +574,9 @@ Auftrag des Nutzers (mit Chat-Protokoll vom 20.10.): (1) Stimmen werden nicht au
 
 **Abnahme**
 - Backend 665 Tests (+22 in `tests/test_lan.py`: private/öffentliche/unbekannte Adressen, HTTP und WebSocket, Schalter aus), ruff sauber.
-- Caddy-Änderung **noch nicht angewendet**, sie braucht sudo (Nutzer). Danach prüfen: Handy im WLAN (Cat-Login erscheint, keine Browser-Abfrage), Mobilfunk (403), `catscastlecloud.de`, `trafficnetwork.link` und Portainer wie vorher.
+- **Caddy angewendet (2026-11-21 09:46)**, auf Freigabe des Nutzers über einen Wegwerf-Container (`--user 0`, ohne Netz, nur `/srv/docker/caddy` eingehängt), weil sudo ein Passwort verlangt: Sicherung `Caddyfile.bak-lan-20261121-0946` (Prüfsumme identisch), nur der `ai`-Block geändert (Diff wie oben, 3 gegen 3 Zeilen), `caddy validate` gültig, Reload ohne Neustart. Die Datei blieb dieselbe (Inode, Besitzer root).
+- **Geprüft:** `https://ai.catscastlecloud.de/health` mit `--resolve` auf `192.168.0.10` (Quelle im Heimnetz): 200. Über die öffentliche Adresse (84.145.92.66, so wie es ein Besucher von außen tut): 403, auch `/`. Danach unverändert: `catscastlecloud.de` 302, `trafficnetwork.link` 200, Portainer 403 (bekannt, LAN-Beschränkung ungenau), `home.` und `blackboard.` 200.
+- **Offener Punkt (NAT-Loopback):** Ein PC im Heimnetz, der die Domain über DNS auflöst (84.145.92.66), bekommt **403**, weil der Router die Anfrage über die öffentliche Adresse zurückspiegelt und Caddy diese als Quelle sieht. Im Heimnetz geht Cat deshalb nur über die Server-Adresse (`http://192.168.0.10:8090`, `https://192.168.0.10:8490`) oder wenn der Router/DNS im Heimnetz `ai.catscastlecloud.de` auf `192.168.0.10` auflöst (dann gilt auch das Let's-Encrypt-Zertifikat und das Mikrofon geht ohne CA). Auf dem Server läuft kein DNS-Dienst; der Eintrag gehört in den Router (Nutzer).
 
 **Hinweise**
 - NAT-Loopback: Sieht Caddy für Geräte im Heimnetz die öffentliche IP statt der Geräteadresse, gibt es 403 (siehe `docs/public-access.md`, dort die Abhilfe).
