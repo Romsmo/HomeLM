@@ -48,6 +48,15 @@ openHAB legt für ein Gerät oft **zwei Items** an: ein Item mit schönem Etiket
 - Befehle gehen an **beide** Items (an das ungenutzte ist das wirkungslos, an das echte kommt er an).
 - Ähnliche Lampen (`Hue_Lampe_Terrasse_...` und `Hue_Lampe_Wohnzimmer_...`) werden nicht verwechselt: Dafür müsste ein Name eine Teilfolge des anderen sein.
 
+### Wie Cat ein Gerät zu einem Namen findet (Befehle)
+
+Bei einem Befehl ("Schließe die Markisen") sucht Cat den Namen in **allen** openHAB-Items und nimmt dabei **steuerbare Geräte vor Sensoren**. Hintergrund (21.11.2026): Zur Anfrage passte der Sensor "Markise Nord Position Manuell" fast so gut wie die Markise selbst, und Cat antwortete "nur als Sensor vorhanden", obwohl es drei steuerbare Markisen gibt.
+
+- **Sammelwörter für Rollläden:** "die Markisen", "alle Markisen", "Terrassenmarkisen", "Rollos Wohnzimmer" meinen alle steuerbaren Rollläden dieses Namens, **wenn sie im selben Raum stehen**. Über mehrere Räume ("die Rollos") wird nicht geraten, Cat fragt nach. Markisen und Rollos werden nicht vermischt.
+- **Passender Befehl:** Schickt das Modell zu einem Rollladen "on" oder "off", obwohl der Nutzer eindeutig "schließen" oder "öffnen" gesagt hat, nimmt Cat `down` bzw. `up`. Ohne eindeutiges Wort ("Mach die Markise aus") passiert nichts.
+- **Neue Geräte sofort:** Findet Cat einen Namen nicht (oder nur einen Sensor), liest es die Item-Liste von openHAB **sofort** neu und sucht noch einmal (höchstens alle 15 Sekunden; die regelmäßige Erkennung alle 10 Minuten bleibt). Ein gerade in openHAB angelegtes Item ist so gleich ansprechbar. Das gilt für Befehle und Zustandsfragen.
+- Was Cat nie steuert, bleibt wie oben beschrieben nur lesbar (Schlösser, Tore, Alarm, Technik).
+
 ### Automationen (openHAB-Regeln)
 
 "Automationen" sind in openHAB **Regeln** (`/rest/rules`), nicht Items. Das Werkzeug `list_automations(query, state)` liest sie nur (GET), fasst Varianten ("Treppenhaus Beschattung Ein Ia, Ib, II") zusammen und antwortet ohne Sprachmodell-Lauf ("Aktiv sind 55 Automationen: ..."; `state`: `aktiv` oder `aus`, aus = in openHAB deaktiviert). Regeln werden weder ausgeführt noch geändert. Die Status-Items der Automatisierung (`Status Beschattung ...`) bleiben nur lesbare Messwerte.

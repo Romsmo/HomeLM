@@ -118,6 +118,7 @@ class OpenHabPlugin(BasePlugin):
         self._backoff = backoff_s
         self._task: asyncio.Task[None] | None = None
         devices.register_backend("openhab", self)
+        devices.rediscover = self.discover
 
     async def start(self, ctx: PluginContext) -> None:
         if self._client is None:

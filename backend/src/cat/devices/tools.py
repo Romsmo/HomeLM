@@ -3,11 +3,11 @@
 from typing import Any
 
 from cat.agent.tools import Tool, ToolContext, ToolError
-from cat.devices.commands import DeviceError, UnknownDevice
+from cat.devices.commands import DeviceError, UnknownDevice, is_controllable
 from cat.devices.models import DeviceInfo
-from cat.devices.service import DeviceService
+from cat.devices.service import SHUTTER_STEMS, DeviceService
 from cat.intents.replies import confirm_text, state_line
-from cat.intents.text import fold, shutter_conflict, tokenize
+from cat.intents.text import fold, shutter_conflict, shutter_intent, tokenize
 from cat.ws.protocol import StageShow
 
 LIST_LIMIT = 25
@@ -37,7 +37,7 @@ _STATE_WORDS = {
 _FILLER = frozenset(
     "oder sowie auch alle alles ganzen ganze einschliesslich inklusive samt".split()
 )
-_SHUTTER_STEMS = frozenset({"rollo", "rolla", "rolll", "jalou", "marki"})
+_SHUTTER_STEMS = SHUTTER_STEMS
 _STATE_TITLE = {"an": "An", "aus": "Aus", "offen": "Offen", "zu": "Zu"}
 
 
@@ -185,7 +185,12 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         if not isinstance(ref, str) or not ref:
             raise ToolError("Parameter 'device' fehlt.")
         try:
-            info = await service.get_state(ref)
+            try:
+                info = await service.get_state(ref)
+            except UnknownDevice:
+                if not await service.refresh_catalog():  # neu in openHAB? sofort nachsehen
+                    raise
+                info = await service.get_state(ref)
         except UnknownDevice as exc:
             # Kein einzelnes Gerät, aber vielleicht eine Gruppe ("Lichter", "Rollos"): auflisten.
             infos = [i for i in service.search(ref, 12) if i.type != "sensor"][:8]
@@ -217,13 +222,32 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         ref, command = args.get("device"), args.get("command")
         if not isinstance(ref, str) or not isinstance(command, str):
             raise ToolError("Parameter 'device' und 'command' werden benötigt.")
-        try:
-            targets = service.resolve_many(ref)
-        except UnknownDevice as exc:
-            ctx.clarify = _unknown_text(exc)
-            raise ToolError(str(exc)) from exc
-        except DeviceError as exc:
-            raise ToolError(str(exc)) from exc
+        refreshed = False
+        while True:
+            try:
+                targets = service.resolve_many(ref, control=True)
+                if not any(is_controllable(t.type) for t in targets) and not refreshed:
+                    # Nur ein Sensor gefunden: vielleicht gibt es das Gerät in openHAB neu.
+                    refreshed = True
+                    if await service.refresh_catalog():
+                        continue
+                break
+            except UnknownDevice as exc:
+                if not refreshed:  # neu in openHAB? sofort nachsehen, dann noch einmal
+                    refreshed = True
+                    if await service.refresh_catalog():
+                        continue
+                ctx.clarify = _unknown_text(exc)
+                raise ToolError(str(exc)) from exc
+            except DeviceError as exc:
+                raise ToolError(str(exc)) from exc
+        if (
+            targets
+            and all(t.type == "shutter" for t in targets)
+            and command.strip().lower() in {"on", "off", "an", "aus", "ein"}
+            and (intent := shutter_intent(ctx.user_text))
+        ):
+            command = intent  # "Schließe die Markisen" mit "off" vom Modell: gemeint ist runter
         if any(t.type == "shutter" for t in targets) and (
             word := shutter_conflict(ctx.user_text, command)
         ):

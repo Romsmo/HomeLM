@@ -588,3 +588,16 @@ Auftrag des Nutzers (mit Chat-Protokoll vom 20.10.): (1) Stimmen werden nicht au
 **Nachtrag 2: Domain im Heimnetz.** Der Nutzer wollte die Domain (echtes Zertifikat) statt der IP. Cat vertraut jetzt zusätzlich der aufgelösten Adresse von `ai.catscastlecloud.de` (`CAT_LAN_TRUSTED_HOSTS`, `LanPolicy` in `cat/lan.py`, alle 5 Minuten neu aufgelöst, bei DNS-Fehler bleibt die letzte Liste; Server aktuell 84.145.92.66). Caddy: die starre Regel `remote_ip 192.168.0.0/16` entfernt (Sicherung `Caddyfile.bak-lan2-20261121-1008`, validate, Reload), die Sperre sitzt allein in Cat. Backend 674 Tests (+5).
 - **Geprüft:** `https://ai.catscastlecloud.de/` vom PC im Heimnetz: 200, Zertifikat gültig, `/api/me` 401. Simulierte Quellen über den Proxy-Weg: 8.8.8.8 und 217.88.249.83 → 403, 84.145.92.66, 192.168.1.50, 192.168.0.7 → 200. Die anderen Seiten wie vorher.
 - **Nicht geprüft:** ein echter Zugriff von außen (der WebFetch-Test lief über den Anschluss des Nutzers und zählt nicht). Bitte mit dem Handy im Mobilfunk gegenprüfen (erwartet 403).
+
+## Phase 26: Geräte in openHAB immer finden (2026-11-21)
+
+**Auslöser:** "Schließe die Markisen" im Chat antwortete "Die Markisen können nicht geschlossen werden, sie sind nur als Sensor vorhanden." Audit-Log: `set_state(device="Markisen", command="off")` wurde auf den Sensor **"Markise Nord Position Manuell"** (`Number`) aufgelöst, der fast so heißt wie die Markise. In openHAB gibt es die Markisen aber als drei steuerbare Rollladen (`Markise_<Seite>_Terrasse_Control` mit Technik-Zwilling `Markise_<Seite>_Control`).
+
+**Gebaut** (`devices/service.py`, `devices/tools.py`, `intents/text.py`, `plugins/openhab`; Beschreibung in `docs/devices.md`)
+- **Steuerbares vor Sensoren:** `resolve(only_controllable=True)` fuer Befehle; nur wenn es nichts Steuerbares gibt, kommt die Antwort zum Sensor.
+- **Sammelwörter:** "die Markisen" meint alle steuerbaren Markisen im selben Raum (nicht ueber Raeume hinweg, Rollos und Markisen nicht gemischt).
+- **Passender Befehl:** "off" fuer einen Rollladen wird bei eindeutigem "schliessen/oeffnen" im Text zu `down`/`up`.
+- **Neue Items sofort:** `DeviceService.refresh_catalog()` liest bei unbekanntem Namen (oder nur Sensor) die Item-Liste von openHAB neu (hoechstens alle 15 s), fuer `set_state` und `get_state`; die Erkennung alle 10 Minuten bleibt.
+- Tests: `tests/test_markisen.py` mit den echten Markisen-Items (13), Backend 687 Tests, ruff sauber.
+
+**Unveraendert:** Risikostufen, Bestaetigung, Vorsichtsregeln (Schloesser, Tore, Alarm, Technik nur lesbar) und der Steuerungsmodus. Cat aendert an openHAB nichts ausser Befehlen an Items.

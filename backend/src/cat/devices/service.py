@@ -81,6 +81,9 @@ class DeviceService:
         # (id, Befehl, Zeit, Zustand davor) der zuletzt ausgeführten Befehle
         self.recent: list[tuple[str, str, float, str | None]] = []
         self.last_device: str | None = None  # zuletzt bedientes oder abgefragtes Gerät (id)
+        # Vom openHAB-Plugin gesetzt: liest alle Items neu (siehe refresh_catalog).
+        self.rediscover: Callable[[], Awaitable[int]] | None = None
+        self._last_catalog_refresh = -1e9
         self._rebuild()
 
     def _rebuild(self) -> None:
@@ -160,15 +163,50 @@ class DeviceService:
                 return word[0].upper() + word[1:]
         return None
 
-    def resolve_many(self, ref: str) -> list[DeviceSpec]:
-        """Ein Gerät oder, bei einem vom Nutzer erklärten Begriff ("Dachrollos"), mehrere."""
+    def resolve_many(self, ref: str, control: bool = False) -> list[DeviceSpec]:
+        """Ein Gerät oder mehrere: ein vom Nutzer erklärter Begriff ("Dachrollos") oder ein
+        Sammelwort für Rollläden im selben Raum ("die Markisen").
+
+        Mit `control=True` (Befehle) zählen **steuerbare Geräte zuerst**: Heißt ein Sensor
+        ("Markise Nord Position Manuell") fast wie der Rollladen, bekommt trotzdem der Rollladen
+        den Befehl. Gibt es nichts Steuerbares, kommt wie bisher die Antwort zum Sensor."""
         term = self.lexicon.lookup(ref) if self.lexicon is not None else None
         if term is not None:
             known = {s.id: s for s in self._all}
             specs = [known[i] for i in term.ids if i in known]
             if specs:
                 return specs
+        if control:
+            group = self._shutter_group(ref)
+            if group:
+                return group
+            try:
+                return [self.resolve(ref, only_controllable=True)]
+            except UnknownDevice:
+                pass  # vielleicht nur ein Sensor: unten die übliche Antwort
         return [self.resolve(ref)]
+
+    def _shutter_group(self, ref: str) -> list[DeviceSpec]:
+        """ "Markisen", "Terrassenmarkisen", "Rollos Wohnzimmer": alle steuerbaren Rollläden, die
+        so heißen, wenn es mehrere sind und sie im selben Raum stehen. Über mehrere Räume
+        ("Rollos") wird nicht geraten (das bleibt eine Rückfrage)."""
+        words = [t for t in tokenize(ref) if len(t) >= 4 and t not in _GROUP_FILLER]
+        # Auch Zusammensetzungen ("Terrassenmarkisen"): das Stammwort darf irgendwo vorkommen.
+        if not words or not all(any(s in t for s in SHUTTER_STEMS) for t in words):
+            return []
+        awning = any("marki" in t for t in words)
+        hidden = {t for s in self._all for t in s.twins}  # Technik-Zwilling: der schöne Name gilt
+        found = [
+            s
+            for s in self._all
+            if s.type == "shutter"
+            and s.item not in hidden
+            and s.listed
+            and ("marki" in fold(f"{s.name} {s.room}")) == awning
+        ]
+        if len(found) >= 2 and len({s.room for s in found}) == 1:
+            return found
+        return []
 
     def last_group(self, max_age_s: float = 600.0) -> list[tuple[DeviceSpec, str]]:
         """Die Geräte der letzten Schaltung (alle, die kurz hintereinander kamen) mit Befehl."""
@@ -197,6 +235,23 @@ class DeviceService:
 
     def register_backend(self, name: str, backend: DeviceBackend) -> None:
         self._backends[name] = backend
+
+    async def refresh_catalog(self, min_gap_s: float = 15.0) -> bool:
+        """Liest die Geräteliste des Backends (openHAB) sofort neu, wenn ein Name nicht passt:
+        Ein neu angelegtes Item steht dann gleich zur Verfügung, ohne auf die regelmäßige
+        Erkennung (alle 10 Minuten) zu warten. Höchstens alle `min_gap_s` Sekunden.
+        Gibt zurück, ob neu gelesen wurde."""
+        hook = self.rediscover
+        now = time.monotonic()
+        if hook is None or now - self._last_catalog_refresh < min_gap_s:
+            return False
+        self._last_catalog_refresh = now
+        try:
+            await hook()
+        except DeviceError as exc:
+            log.warning("Geräteliste neu lesen fehlgeschlagen: %s", exc)
+            return False
+        return True
 
     @property
     def control(self) -> Control:
@@ -270,17 +325,20 @@ class DeviceService:
             control=self._control, error=self._allowlist.error, devices=self.snapshot()
         )
 
-    def resolve(self, ref: str) -> DeviceSpec:
-        """Findet ein Gerät über id oder Namen. Mehrdeutiges wird nicht geraten."""
+    def resolve(self, ref: str, only_controllable: bool = False) -> DeviceSpec:
+        """Findet ein Gerät über id oder Namen. Mehrdeutiges wird nicht geraten.
+        `only_controllable`: nur unter Geräten suchen, die Befehle annehmen (keine Sensoren)."""
         key = ref.strip().lower()
-        specs = self._all
+        specs = (
+            [s for s in self._all if is_controllable(s.type)] if only_controllable else self._all
+        )
         exact = [s for s in specs if s.id == key]
         if not exact:
             exact = [s for s in specs if s.name.lower() == key]
         if not exact:
             exact = [s for s in specs if key in (syn.lower() for syn in s.synonyms)]
         if not exact:
-            exact = self._resolve_loose(fold(ref))
+            exact = self._resolve_loose(fold(ref), specs)
         if len(exact) == 1:
             return exact[0]
         if len(exact) > 1:
@@ -342,14 +400,16 @@ class DeviceService:
             return ""
         return f"Zuletzt bedient oder abgefragt: {spec.name} ({spec.room}, id {spec.id})."
 
-    def _resolve_loose(self, key: str) -> list[DeviceSpec]:
+    def _resolve_loose(
+        self, key: str, candidates: list[DeviceSpec] | None = None
+    ) -> list[DeviceSpec]:
         """Gleiche Schreibweise ohne Umlaute, Groß-/Kleinschreibung und Unterstriche, sonst das
         eindeutig beste unscharfe Ergebnis (nie raten, wenn zwei fast gleich gut sind)."""
         if not key:
             return []
         folded = [
             (spec, [fold(spec.name), *(fold(syn) for syn in spec.synonyms), fold(spec.id)])
-            for spec in self._all
+            for spec in (self._all if candidates is None else candidates)
         ]
         same = [spec for spec, names in folded if key in names]
         if same:
@@ -494,6 +554,9 @@ TYPE_STEMS = frozenset(
 
 
 _GENERIC_STEMS = frozenset({"zimme", "haus", "gerae", "licht", "schal"})
+# Wortanfänge für Rollläden, Rollos, Jalousien und Markisen (Markisen heißen nicht "Rollo").
+SHUTTER_STEMS = frozenset({"rollo", "rolla", "rolll", "jalou", "marki"})
+_GROUP_FILLER = frozenset("oder sowie auch alle alles ganzen ganze samt".split())
 
 
 def _stems(text: str) -> set[str]:

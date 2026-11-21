@@ -136,6 +136,21 @@ _OPEN_PREFIXES = ("oeffn", "hochfahr", "aufmach", "rauf", "hoch")
 _CLOSE_PREFIXES = ("schliess", "runterfahr", "zumach", "runter", "herunter")
 
 
+def shutter_intent(user_text: str) -> str | None:
+    """Was der Nutzer mit Rollläden will, wenn es eindeutig ist: "down" (schließen) oder "up"
+    (öffnen), sonst None. Hilft, wenn das Modell einen unpassenden Befehl wie "off" schickt."""
+    if re.search(r"\d", user_text):
+        return None
+    tokens = tokenize(user_text)
+    wants_open = (
+        "auf" in tokens or "offen" in tokens or any(t.startswith(_OPEN_PREFIXES) for t in tokens)
+    )
+    wants_close = "zu" in tokens or any(t.startswith(_CLOSE_PREFIXES) for t in tokens)
+    if wants_open == wants_close:
+        return None
+    return "up" if wants_open else "down"
+
+
 def shutter_conflict(user_text: str, command: str) -> str | None:
     """Der Nutzer sagt "schließen", das Modell sendet "öffnen" (0 Prozent, up) oder umgekehrt?
     Dann das Wort des Nutzers, sonst None. Mit Zahl im Text ("auf 30 Prozent") keine Prüfung."""
