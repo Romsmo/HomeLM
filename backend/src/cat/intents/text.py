@@ -1,6 +1,7 @@
 """Textaufbereitung für deutsche Sprachbefehle: Normalisieren, Füllwörter, Zahlwörter."""
 
 import re
+from typing import Literal
 
 _FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "é": "e", "è": "e"})
 _TOKEN = re.compile(r"[a-z0-9]+(?:[.,][0-9]+)?|%")
@@ -130,6 +131,61 @@ def has_control_cue(text: str) -> bool:
 def negated_or_reported(text: str) -> bool:
     """Verneint oder berichtet der Text nur ("Ich habe nie gesagt, dass ...")?"""
     return bool(set(tokenize(text)) & _NOT_A_COMMAND)
+
+
+# --- Tun oder nur lesen? ---------------------------------------------------------------------
+
+Intent = Literal["act", "read", "none"]
+
+# Höfliche Bitte als Frage: "Kannst du die Markisen schließen?" ist ein Auftrag.
+_POLITE_REQUEST_STARTS = frozenset(
+    "kannst koenntest wuerdest koennten wuerden koenntet magst".split()
+)
+# Wer so fragt, will etwas erfahren, auch mit Schaltwort ("Zeig mir die offenen Rollos").
+_INFO_WORDS = frozenset(
+    "sag sage sagen zeig zeige zeigen nenn nenne nennen verrat verrate erklaer erklaere "
+    "erklaeren lies zaehl zaehle".split()
+)
+_COPULA = frozenset("ist sind war waren wird bleibt bleiben".split())
+# Wortanfänge von Befehlsverben (Imperativ): "Mach ...", "Fahr ...", "Stell ...".
+_IMPERATIVE_STEMS = (
+    "mach", "schalt", "stell", "fahr", "dreh", "dimm", "setz", "lass", "oeffn", "schliess",
+    "aktivier", "deaktivier", "entriegel", "verriegel", "schieb", "zieh", "senk", "start",
+    "stopp", "bring", "hol",
+)  # fmt: skip
+
+
+def intent_kind(text: str) -> Intent:
+    """Muss Cat etwas **tun** ("act": Schaltbefehl), nur **lesen** ("read": Frage, Auskunft) oder
+    ist es **keins von beiden** ("none": Rückblick, Verneinung, bloße Feststellung, Name)?
+
+    - "Schließe die Markisen", "Licht an", "Kannst du das Rollo runterfahren?" -> act
+    - "Ist das Rollo zu?", "Sind die Markisen offen?", "Sag mir, ob das Licht an ist" -> read
+    - "Das Rollo ist zu", "Ich hab nie gesagt, dass du das Licht anmachen sollst", "Roman" -> none
+
+    Das Backend erzwingt das: Nur bei "act" darf `set_state` etwas schalten (agent/loop.py)."""
+    if negated_or_reported(text):
+        return "none"
+    tokens = tokenize(text)
+    if not tokens:
+        return "none"
+    cue = has_control_cue(text)
+    tokenset = set(tokens)
+    if tokenset & {"ob", "wissen"}:
+        return "read"  # "Sag mir, ob das Licht an ist"
+    if cue and tokenset & _POLITE_REQUEST_STARTS and not tokenset & _INFO_WORDS:
+        return "act"  # "Kannst du die Markisen schließen?"
+    first = (significant(tokens) or [""])[0]
+    imperative = first.startswith(_IMPERATIVE_STEMS)
+    if cue and imperative:
+        return "act"  # "Mach das Licht an": auch wenn die Spracherkennung ein "?" anhängt
+    if is_question(text) or tokenset & _INFO_WORDS:
+        return "read"
+    if not cue:
+        return "none"
+    if tokenset & _COPULA:
+        return "none"  # "Das Rollo ist zu": eine Feststellung, kein Befehl
+    return "act"
 
 
 _OPEN_PREFIXES = ("oeffn", "hochfahr", "aufmach", "rauf", "hoch")

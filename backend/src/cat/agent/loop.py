@@ -8,12 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from cat.agent.tools import Escalation, ToolContext, ToolError, ToolRegistry, ToolTrace
 from cat.audit import AuditLog
 from cat.intents.claims import claims_action
-from cat.intents.text import (
-    has_control_cue,
-    is_question,
-    negated_or_reported,
-    power_conflict,
-)
+from cat.intents.text import intent_kind, power_conflict
 from cat.llm.base import LLMProvider, Message, TextDelta, ToolCall
 
 log = logging.getLogger("cat.agent")
@@ -93,7 +88,7 @@ class Agent:
         # lesen gern erst den Zustand und kündigen dann nur an ("Ich schalte es aus").
         asked = _last_user_text(history)
         ctx.user_text = asked
-        command = ctx.device_related and not is_question(asked) and has_control_cue(asked)
+        command = ctx.device_related and intent_kind(asked) == "act"
         for _ in range(self._max_steps):
             step_text: list[str] = []
             calls: list[ToolCall] = []
@@ -241,10 +236,23 @@ class Agent:
         if call.arguments is None:
             return "Fehler: Die Argumente sind kein gültiges JSON-Objekt.", False
         if call.name == "set_state" and user_text:
-            if not has_control_cue(user_text) or negated_or_reported(user_text):
-                # Ein Name ("Roman"), eine Erklärung oder ein Rückblick ist kein Schaltbefehl.
+            kind = intent_kind(user_text)
+            if kind == "none":
+                # Ein Name ("Roman"), eine Erklärung, ein Rückblick oder eine bloße Feststellung
+                # ("Das Rollo ist zu") ist kein Schaltbefehl.
                 ctx.blocked = True
                 return "Fehler: Das war kein Schaltbefehl. Nichts wurde geschaltet.", False
+            if kind == "read" and (reader := self._registry.get("get_state")) is not None:
+                # Eine Frage ("Ist das Rollo zu?") schaltet nie: Cat liest stattdessen den Zustand
+                # und antwortet damit.
+                ref = call.arguments.get("device")
+                if not isinstance(ref, str) or not ref:
+                    return "Fehler: Parameter 'device' fehlt.", False
+                try:
+                    text = await reader.handler({"device": ref}, ctx)
+                except ToolError as exc:
+                    return f"Fehler: {exc}", False
+                return f"Nur gelesen, nichts geschaltet (das war eine Frage): {text}", True
         if call.name == "set_state" and (
             word := power_conflict(user_text, str(call.arguments.get("command", "")).lower())
         ):

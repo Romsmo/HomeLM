@@ -48,6 +48,18 @@ openHAB legt für ein Gerät oft **zwei Items** an: ein Item mit schönem Etiket
 - Befehle gehen an **beide** Items (an das ungenutzte ist das wirkungslos, an das echte kommt er an).
 - Ähnliche Lampen (`Hue_Lampe_Terrasse_...` und `Hue_Lampe_Wohnzimmer_...`) werden nicht verwechselt: Dafür müsste ein Name eine Teilfolge des anderen sein.
 
+### Tun oder nur lesen? (seit 2026-11-21)
+
+Cat entscheidet bei jeder Nachricht zuerst, **was zu tun ist**, und handelt danach (`intent_kind` in `intents/text.py`, erzwungen im Backend in `agent/loop.py`, nicht nur im Prompt):
+
+| Art | Beispiele | Was Cat tut |
+|---|---|---|
+| **tun** (`act`) | "Schließe die Markisen", "Licht an", "Rollo runter", "Kannst du das Rollo bitte schließen?", "Mach das Licht an und sag mir Bescheid" | schaltet; Cat meldet erst "erledigt", wenn `set_state` wirklich lief |
+| **nur lesen** (`read`) | "Ist das Rollo zu?", "Welche Rollos sind offen?", "Sag mir, ob das Licht an ist", "Zeig mir die offenen Rollos" | schaltet **nie**; liest den Zustand und antwortet damit |
+| **keins von beiden** (`none`) | "Das Rollo ist zu" (Feststellung), "Ich hab nie gesagt, dass du das Licht anmachen sollst", ein bloßer Name | tut nichts und sagt, dass es das nicht als Schaltbefehl verstanden hat |
+
+Wichtig dabei: Schaltwörter wie "zu", "auf", "an" stehen auch in Fragen und Feststellungen. Früher konnte das Modell bei "Ist das Rollo zu?" trotzdem `set_state` aufrufen. Jetzt wird so ein Aufruf bei einer Frage **nicht ausgeführt**, sondern durch das Lesen des Zustands ersetzt (im Audit-Log als "Nur gelesen, nichts geschaltet"). Eine höfliche Bitte als Frage ("Kannst du ... schließen?") zählt als Auftrag, "Kannst du mir sagen, ob ..." als Frage. Ein vom Spracherkenner angehängtes Fragezeichen ändert einen Befehl mit Befehlsverb ("Mach das Licht an?") nicht. Bestätigungen und Risikostufen gelten unverändert.
+
 ### Wie Cat ein Gerät zu einem Namen findet (Befehle)
 
 Bei einem Befehl ("Schließe die Markisen") sucht Cat den Namen in **allen** openHAB-Items und nimmt dabei **steuerbare Geräte vor Sensoren**. Hintergrund (21.11.2026): Zur Anfrage passte der Sensor "Markise Nord Position Manuell" fast so gut wie die Markise selbst, und Cat antwortete "nur als Sensor vorhanden", obwohl es drei steuerbare Markisen gibt.
