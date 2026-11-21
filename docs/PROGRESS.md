@@ -561,3 +561,22 @@ Auftrag des Nutzers (mit Chat-Protokoll vom 20.10.): (1) Stimmen werden nicht au
 **Hinweise**
 - Das Mikrofon braucht HTTPS (`https://ai.catscastlecloud.de`). Ohne zeigt die Ansicht den Grund an, der Chat per Text geht trotzdem.
 - Rollback: `git revert` des Commits dieser Phase; die Desktop-Ansicht ist unveraendert, `?ui=desktop` umgeht die Handy-Ansicht sofort.
+
+## Phase 25: Nur Heimnetz, eine Passwortabfrage (2026-11-21)
+
+**Auftrag:** Die Website nur aus dem lokalen Netz erreichbar machen (Router 192.168.1.1 und das Netz dahinter) und die doppelte Passwortabfrage entfernen, sodass nur der Login der Website bleibt.
+
+**Ist-Zustand (gelesen, Server):** Der Block `ai.catscastlecloud.de` in `/srv/docker/caddy/Caddyfile` (root, nur mit sudo beschreibbar) hatte `basic_auth` (Benutzer `catscastle`, die zweite Abfrage) und keine IP-Beschränkung. Caddy sieht echte Client-IPs (Log zeigt z. B. `remote_ip` externer Besucher). Server: `eno1` 192.168.0.10/24 (Standardroute 192.168.0.1), `wlan0` 192.168.1.78/24. Die Caddyfile enthält inzwischen weitere Blöcke (`home.`, `blackboard.`), die nicht von Cat stammen und nicht angefasst werden.
+
+**Gebaut**
+- `backend/src/cat/lan.py` und `CAT_LAN_ONLY`: Middleware, die jede Anfrage (HTTP und WebSocket) mit nicht privater oder unbekannter Client-IP mit 403 abweist (fail closed, IPv4-in-IPv6 wird erkannt). Zweite, unabhängige Sperre hinter Caddy: Eine falsche Caddyfile macht Cat so nicht öffentlich, auch wenn die Caddy-Passwortabfrage entfällt.
+- `scripts/caddy_lan_only.sh` (Nutzer, sudo): Sicherung `Caddyfile.bak-lan-*`, entfernt `basic_auth` und setzt `@extern not remote_ip 192.168.0.0/16` plus `respond @extern "Forbidden" 403` in den `ai`-Block, überschreibt die Datei in place, `caddy validate`, Reload, bei Fehler automatischer Rollback; `--rollback` stellt die letzte Sicherung wieder her. Minimaler Diff (3 Zeilen gegen 3 Zeilen); die Umschreib-Logik ist an einer Kopie der echten Caddyfile getestet (nur der `ai`-Block ändert sich, zweiter Lauf ohne Änderung).
+
+**Abnahme**
+- Backend 665 Tests (+22 in `tests/test_lan.py`: private/öffentliche/unbekannte Adressen, HTTP und WebSocket, Schalter aus), ruff sauber.
+- Caddy-Änderung **noch nicht angewendet**, sie braucht sudo (Nutzer). Danach prüfen: Handy im WLAN (Cat-Login erscheint, keine Browser-Abfrage), Mobilfunk (403), `catscastlecloud.de`, `trafficnetwork.link` und Portainer wie vorher.
+
+**Hinweise**
+- NAT-Loopback: Sieht Caddy für Geräte im Heimnetz die öffentliche IP statt der Geräteadresse, gibt es 403 (siehe `docs/public-access.md`, dort die Abhilfe).
+- Unterwegs geht Cat nicht mehr; dafür braucht es ein VPN ins Heimnetz.
+- Rollback: `sudo bash scripts/caddy_lan_only.sh --rollback`; `CAT_LAN_ONLY=false`.

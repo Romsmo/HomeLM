@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # getrennte IPs oder Netze, z. B. 172.19.0.0/16 (das Docker-Netz von Caddy). Leer = niemand.
     # Ohne das sähe Cat hinter dem Proxy nur die Proxy-IP (Anmelde-Sperre träfe alle gemeinsam).
     trusted_proxies: str = ""
+    # Nur Heimnetz: Anfragen von öffentlichen Adressen bekommen 403, auch über Caddy (cat/lan.py).
+    # Die Client-IP ist hinter dem Proxy nur dann echt, wenn `trusted_proxies` gesetzt ist.
+    lan_only: bool = False
 
     # Login der Weboberfläche. Ohne Passwort ist kein Login möglich (fail closed).
     password: SecretStr | None = None

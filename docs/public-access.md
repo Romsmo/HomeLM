@@ -1,6 +1,26 @@
-# Cat unter ai.catscastlecloud.de (Reverse-Proxy, echtes Zertifikat)
+# Cat unter ai.catscastlecloud.de (Reverse-Proxy, echtes Zertifikat, nur Heimnetz)
 
-Cat ist dann über Caddy aus dem Internet erreichbar, mit einem **echten Let's-Encrypt-Zertifikat** (Caddy holt es selbst, wie für `catscastlecloud.de`). Damit ist `window.isSecureContext` wahr und das **Browser-Mikrofon geht ohne CA-Installation**, auch unterwegs. Das ist eine bewusste Abweichung von der Regel "Cat nicht aus dem Internet erreichbar" (CLAUDE.md, Abschnitt 4), nur mit ausdrücklicher Freigabe des Nutzers und mit den Schutzmaßnahmen unten.
+Cat ist über Caddy unter `https://ai.catscastlecloud.de` erreichbar, mit einem **echten Let's-Encrypt-Zertifikat** (Caddy holt es selbst, wie für `catscastlecloud.de`). Damit ist `window.isSecureContext` wahr und das **Browser-Mikrofon geht ohne CA-Installation**.
+
+## Stand seit 2026-11-21: nur aus dem Heimnetz, eine Passwortabfrage
+
+Auf Anweisung des Nutzers ist Cat **nicht mehr aus dem Internet erreichbar** (das stellt die Regel "Cat nicht aus dem Internet erreichbar", CLAUDE.md Abschnitt 4, wieder her) und es gibt **nur noch die Anmeldung von Cat selbst**, nicht mehr zusätzlich die Browser-Abfrage von Caddy. Zwei unabhängige Sperren:
+
+1. **Caddy** (`ai.catscastlecloud.de`-Block): `@extern not remote_ip 192.168.0.0/16` antwortet mit 403. Erlaubt ist alles in `192.168.0.0/16`, also der Router `192.168.1.1` mit seinem Netz (`192.168.1.x`) und das Netz des Servers (`192.168.0.x`). Das Skript `scripts/caddy_lan_only.sh` setzt das (braucht sudo, Ablauf unten) und entfernt `basic_auth`.
+2. **Cat selbst** (`CAT_LAN_ONLY=true` in der `.env`, `backend/src/cat/lan.py`): Anfragen, deren Client-IP nicht privat ist (Internet, unbekannt), bekommen 403, auch WebSockets. Die IP ist hinter Caddy die echte, weil `CAT_TRUSTED_PROXIES` den Proxy nennt. Das fängt eine falsch eingestellte Caddyfile ab; ohne die Sperre in Caddy wäre sonst Cats Login die einzige Hürde.
+
+**Gut zu wissen**
+- **Privat** zählt: `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, Loopback, Link-Local, IPv6 `fd..`/`fe80`. Eine globale IPv6-Adresse im Heimnetz gilt als "außen" (403); dann die IPv4-Adresse nutzen.
+- **Sieht Caddy nur die Router-Adresse?** Wenn ein Gerät im Heimnetz `ai.catscastlecloud.de` aufruft, geht die Anfrage über die öffentliche IP und kommt per NAT-Loopback des Routers zurück. Je nach Router sieht Caddy dann die Adresse des Geräts, die Router-Adresse (`192.168.1.1`, erlaubt) oder die öffentliche IP des Anschlusses (403). Nach dem Einrichten **vom Handy im WLAN testen**; gibt es 403, entweder im Heimnetz-DNS `ai.catscastlecloud.de` auf `192.168.0.10` legen (Router oder DNS-Server) oder den Server direkt per `https://192.168.0.10:8490` nutzen (`docs/https.md`).
+- **Unterwegs** (Mobilfunk) geht Cat nun nicht mehr. Wer von außen will, nutzt ein VPN ins Heimnetz.
+- Cats Anmelde-Sperre (5 Fehlversuche je IP, 60 s) bleibt; die globale Sperre für Zugriffe von außen ist damit praktisch gegenstandslos.
+- Die PWA-Symbole und das Manifest brauchen keine Caddy-Anmeldung mehr; `crossorigin="use-credentials"` im `index.html` schadet nicht.
+
+Rollback: `sudo bash /srv/homelm/scripts/caddy_lan_only.sh --rollback` stellt die letzte Sicherung `Caddyfile.bak-lan-*` wieder her (mit Passwortabfrage von Caddy und ohne LAN-Sperre). Cats eigene Sperre abschalten: `CAT_LAN_ONLY=false` in `/srv/homelm/.env`, `docker compose --profile offline up -d --no-build backend`.
+
+## Frühere Variante (Internet, mit zweiter Hürde)
+
+Bis 2026-11-21 war Cat über Caddy aus dem Internet erreichbar (bewusste Abweichung von der Regel, mit ausdrücklicher Freigabe des Nutzers, `basic_auth` als zweite Hürde). Der Rest dieser Seite beschreibt diese Variante und die Grundeinrichtung des Blocks.
 
 ## Voraussetzungen
 

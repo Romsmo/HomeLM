@@ -20,6 +20,7 @@ from cat import (
 from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
 from cat.intents.fillers import FillerWorkshop
+from cat.lan import LanOnlyMiddleware
 from cat.llm.base import LLMProvider, TextDelta
 from cat.llm.litellm_provider import LiteLLMProvider
 from cat.memory.sessions import summarize_old_sessions
@@ -187,6 +188,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Cat", version=__version__, lifespan=lifespan)
     app.state.cat = state
     app.state.auth = state.auth
+
+    if settings.lan_only:
+        app.add_middleware(LanOnlyMiddleware)
+        if not settings.trusted_proxies.strip():
+            log.info("CAT_LAN_ONLY ohne CAT_TRUSTED_PROXIES: gilt für die direkte Verbindung")
 
     if not state.auth.configured:
         log.warning("CAT_PASSWORD ist nicht gesetzt: Login ist deaktiviert")

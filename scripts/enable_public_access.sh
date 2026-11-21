@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# HINWEIS (2026-11-21): Der Block existiert bereits. Für "nur Heimnetz, eine Passwortabfrage" gilt
+# scripts/caddy_lan_only.sh; dieses Skript nicht mehr ausführen (es würde Internet-Zugang einrichten).
 # Schaltet ai.catscastlecloud.de frei: hängt einen Block an das Caddyfile an (docs/public-access.md).
 #
 #   cd /srv/homelm && sudo bash scripts/enable_public_access.sh
