@@ -181,7 +181,7 @@ class DeviceService:
             if specs:
                 return specs
         if control:
-            group = self._shutter_group(ref)
+            group = self.shutter_group(ref)
             if group:
                 return group
             try:
@@ -190,7 +190,7 @@ class DeviceService:
                 pass  # vielleicht nur ein Sensor: unten die übliche Antwort
         return [self.resolve(ref)]
 
-    def _shutter_group(self, ref: str) -> list[DeviceSpec]:
+    def shutter_group(self, ref: str) -> list[DeviceSpec]:
         """ "Markisen", "Terrassenmarkisen", "Rollos Wohnzimmer": alle steuerbaren Rollläden, die
         so heißen, wenn es mehrere sind und sie im selben Raum stehen. Über mehrere Räume
         ("Rollos") wird nicht geraten (das bleibt eine Rückfrage)."""

@@ -44,7 +44,7 @@ async def test_the_chat_from_the_user_all_awnings_open_again(tmp_path: Path) -> 
     # 11:13 "Mach sie doch wieder auf": früher fuhr nur Markise West hoch
     reply = await teach.intercept("Mach sie doch wieder auf")
     assert sent_to(s, "up") == NICE
-    assert reply is not None and reply.count("fährt hoch") == 3
+    assert reply == "Okay, Markise Nord, Ost und West fahren hoch."
 
     # 11:13 "Ich meinte mach alle auf"
     s.backend.sent.clear()
@@ -61,7 +61,7 @@ async def test_x_and_y_too_uses_the_last_command(tmp_path: Path) -> None:
     # 11:14 "Ost und Nord auch!": früher "nicht als Schaltbefehl verstanden"
     reply = await teach.intercept("Ost und Nord auch!")
     assert sent_to(s, "up") == {"Markise_Ost_Terrasse_Control", "Markise_Nord_Terrasse_Control"}
-    assert reply is not None and "Markise Ost" in reply and "Markise Nord" in reply
+    assert reply == "Okay, Markise Ost und Nord fahren hoch."
 
 
 @pytest.mark.parametrize(

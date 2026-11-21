@@ -29,7 +29,7 @@ from cat.devices.models import DeviceSpec
 from cat.devices.service import DeviceService
 from cat.intents.fillers import CATEGORIES, FillerBank, user_phrase
 from cat.intents.lexicon import Lexicon
-from cat.intents.replies import confirm_text
+from cat.intents.replies import confirm_many, state_line
 from cat.intents.text import FILLERS, fold, is_question, negated_or_reported, tokenize
 from cat.memory.notes import NoteError
 from cat.memory.service import MemoryService
@@ -177,6 +177,7 @@ class TeachService:
         if not group:
             return "Ich weiß gerade nicht, was ich rückgängig machen soll."
         lines: list[str] = []
+        done: list[tuple[DeviceSpec, str]] = []
         for spec, before in group:
             if spec.effective_risk == "high":
                 return (
@@ -190,7 +191,8 @@ class TeachService:
             except DeviceError as exc:
                 lines.append(str(exc))
                 continue
-            lines.append(confirm_text(result.spec, result.command))
+            done.append((result.spec, result.command))
+        lines += confirm_many(done)
         if not lines:
             return "Den vorherigen Zustand kenne ich nicht, deshalb kann ich es nicht zurücksetzen."
         if self._audit is not None:
@@ -348,6 +350,8 @@ class TeachService:
         tokens = tokenize(text)
         if not tokens:
             return None
+        if tokens[0] == "und" and "?" in text and not set(tokens) & _ALSO_WORDS:
+            return await self._and_read(tokens)
         group = self._devices.last_group()
         if not group:
             return None
@@ -369,6 +373,23 @@ class TeachService:
             wanted = _fit(spec, command) if command else _opposite(spec, last)
             pairs.append((spec, wanted))
         return await self._run(pairs, "followup", text)
+
+    async def _and_read(self, tokens: list[str]) -> str | None:
+        """ "Und Ost?" nach einer Frage oder Schaltung: der Zustand des genannten Geräts
+        (gleiche Sorte im Raum wie das zuletzt besprochene)."""
+        last_id = self._devices.last_device
+        last = next((s for s in self._devices.specs if s.id == last_id), None)
+        if last is None:
+            return None
+        words = [t for t in tokens[1:] if t not in FILLERS and t not in _GLUE_WORDS]
+        if not words:
+            return None
+        found = [s for s in self._devices.context_family([(last, "")]) if _names_match(s, words)]
+        if len(found) != 1:
+            return None
+        spec = found[0]
+        info = await self._devices.get_state(spec.id)
+        return state_line(spec, info)
 
     async def _also(
         self, text: str, tokens: list[str], group: list[tuple[DeviceSpec, str]]
@@ -409,6 +430,7 @@ class TeachService:
         self, pairs: list[tuple[DeviceSpec, str | None]], source: str, text: str
     ) -> str | None:
         lines: list[str] = []
+        done: list[tuple[DeviceSpec, str]] = []
         for spec, wanted in pairs:
             if spec.effective_risk == "high":
                 return (
@@ -421,7 +443,8 @@ class TeachService:
             except DeviceError as exc:
                 lines.append(str(exc))
                 continue
-            lines.append(confirm_text(result.spec, result.command))
+            done.append((result.spec, result.command))
+        lines = [*confirm_many(done), *lines]
         if not lines:
             return None  # passt nicht zu den Geräten von eben: normaler Weg
         if self._audit is not None:
@@ -442,6 +465,7 @@ class TeachService:
             return "Ich weiß gerade nicht, welches Gerät du meinst. Sag es bitte als ganzen Befehl."
         group = self._scope(group, tokens)
         lines: list[str] = []
+        done: list[tuple[DeviceSpec, str]] = []
         for spec, _ in group:
             if spec.effective_risk == "high":
                 return (
@@ -455,7 +479,8 @@ class TeachService:
             except DeviceError as exc:
                 lines.append(str(exc))
                 continue
-            lines.append(confirm_text(result.spec, result.command))
+            done.append((result.spec, result.command))
+        lines = [*confirm_many(done), *lines]
         if not lines:
             return "Das passt nicht zu den Geräten von eben. Sag es bitte als ganzen Befehl."
         if self._audit is not None:

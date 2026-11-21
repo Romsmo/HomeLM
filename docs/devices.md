@@ -48,6 +48,17 @@ openHAB legt für ein Gerät oft **zwei Items** an: ein Item mit schönem Etiket
 - Befehle gehen an **beide** Items (an das ungenutzte ist das wirkungslos, an das echte kommt er an).
 - Ähnliche Lampen (`Hue_Lampe_Terrasse_...` und `Hue_Lampe_Wohnzimmer_...`) werden nicht verwechselt: Dafür müsste ein Name eine Teilfolge des anderen sein.
 
+### Natürlicher antworten (seit 2026-11-21)
+
+Grundlage ist eine kurze Recherche zu Sprachassistenten (Quellen unten): Bei Geräte-Befehlen bevorzugen Nutzer **knappe** Bestätigungen, Wiederholungen und Nachfragen mitten im Befehl wirken unnatürlich, und bekannte Befehle gehören deterministisch lokal erledigt, nicht dem Sprachmodell.
+
+- **Gleiche Befehle zusammengefasst:** Statt dreimal "Okay, Markise Nord fährt runter" sagt Cat einmal "Okay, Markise Nord, Ost und West fahren runter." (haben alle Namen dasselbe erste Wort, steht es nur einmal). Gilt für Befehle, Folgeanfragen, Korrekturen und Rückgängig.
+- **Zustand in einem Satz:** "Wie sind die Markisen?" -> "Markise Nord, Ost und West sind alle offen." (Sammelwörter für Rollläden meinen die steuerbaren Geräte, nicht einen Sensor.)
+- **"Und Ost?"** nach einer Frage oder Schaltung liest den Zustand des genannten Geräts der gleichen Sorte im Raum, ohne Modell.
+- **Keine Namensfrage mitten im Befehl:** "Übrigens, mit wem spreche ich eigentlich?" kommt nur nach Antworten ohne Werkzeug (Unterhaltung, Wissen), nie direkt nach "Mach das Licht an".
+
+Quellen: Google, Konversationsdesign zu Bestätigungen (https://developers.google.com/assistant/conversation-design/confirmations), CHI 2022 "Keep it short" (https://www.uni-ulm.de/fileadmin/website_uni_ulm/iui.inst.100/1-hci/hci-paper/2022/CHI2022_Keep_it_short.pdf), Home Assistant zu lokalen Intents vor dem Sprachmodell (https://www.home-assistant.io/blog/2025/09/11/ai-in-home-assistant).
+
 ### Kontext der letzten Anfragen und der Nutzer (seit 2026-11-21)
 
 Cat merkt sich die **letzte Schaltung** kurz (`CAT_CONTEXT_TTL_S`, Standard 600 Sekunden, danach wird sie vergessen) und versteht damit Folgeanfragen ohne Modell (`intents/teach.py`, Handler `_followup`):

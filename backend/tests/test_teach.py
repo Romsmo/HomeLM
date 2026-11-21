@@ -116,7 +116,7 @@ async def test_explaining_a_term_never_moves_a_shutter_and_the_term_works_afterw
         ]
     )
     assert backend.sent == [("roman", "down"), ("marius", "down")]
-    assert out == "Okay, Romans Rollo fährt runter.\nOkay, Marius Rollo fährt runter."
+    assert out == "Okay, Romans Rollo und Marius Rollo fahren runter."
 
 
 @pytest.mark.parametrize(
@@ -154,7 +154,7 @@ async def test_a_correction_applies_the_new_word_to_the_last_devices(tmp_path: P
     backend.sent.clear()
     reply = await teach.intercept("Ähm, bitte schließen, meinte ich.")
     assert backend.sent == [("roman", "down"), ("marius", "down")]
-    assert reply == "Okay, Romans Rollo fährt runter.\nOkay, Marius Rollo fährt runter."
+    assert reply == "Okay, Romans Rollo und Marius Rollo fahren runter."
 
 
 async def test_a_correction_without_a_recent_command_does_nothing(tmp_path: Path) -> None:
@@ -288,7 +288,7 @@ async def test_undo_restores_the_state_before_the_last_command(tmp_path: Path) -
     backend.sent.clear()
     reply = await teach.intercept("Mach das bitte rückgängig")
     assert backend.sent == [("roman", "0"), ("marius", "0")]
-    assert reply == "Okay, Romans Rollo ist offen.\nOkay, Marius Rollo ist offen."
+    assert reply == "Okay, Romans Rollo und Marius Rollo sind offen."
 
 
 async def test_a_complaint_offers_to_undo_and_waits_for_the_answer(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@ from cat.agent.tools import Tool, ToolContext, ToolError
 from cat.devices.commands import DeviceError, UnknownDevice, is_controllable
 from cat.devices.models import DeviceInfo, DeviceSpec
 from cat.devices.service import SHUTTER_STEMS, DeviceService
-from cat.intents.replies import confirm_text, state_line
+from cat.intents.replies import confirm_many, join_names, state_line
 from cat.intents.text import fold, shutter_conflict, shutter_intent, tokenize
 from cat.ws.protocol import StageShow
 
@@ -220,6 +220,16 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
         ref = args.get("device")
         if not isinstance(ref, str) or not ref:
             raise ToolError("Parameter 'device' fehlt.")
+        group = service.shutter_group(ref)
+        if group:  # "Wie sind die Markisen?": alle Geräte dieses Namens, nicht ein Sensor
+            infos = [await service.refresh_one(s, notify=False) for s in group]
+            words = {_state_word(i) for i in infos}
+            if len(words) == 1 and words <= set(_STATE_TITLE):
+                text = f"{join_names([i.name for i in infos])} sind alle {words.pop()}."
+            else:
+                text = "; ".join(f"{i.name}: {_state_word(i)}" for i in infos) + "."
+            ctx.final_replies.append(text)
+            return text
         try:
             try:
                 info = await _first(personal_refs(ref, ctx.speaker), lambda r: service.get_state(r))
@@ -231,9 +241,13 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
             # Kein einzelnes Gerät, aber vielleicht eine Gruppe ("Lichter", "Rollos"): auflisten.
             infos = [i for i in service.search(ref, 12) if i.type != "sensor"][:8]
             if infos:
-                text = f"Zu „{ref}“ gibt es: " + ", ".join(
-                    f"{i.name} ({_state_word(i)})" for i in infos
-                )
+                words = {_state_word(i) for i in infos}
+                if len(infos) >= 2 and len(words) == 1 and words <= set(_STATE_TITLE):
+                    text = f"{join_names([i.name for i in infos])} sind alle {words.pop()}"
+                else:
+                    text = f"Zu „{ref}“ gibt es: " + ", ".join(
+                        f"{i.name} ({_state_word(i)})" for i in infos
+                    )
                 ctx.final_replies.append(text + ".")
                 return text + "."
             ctx.clarify = _unknown_text(exc)
@@ -292,7 +306,7 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
                 "öffnen, down oder 100 Prozent = schließen). Nichts wurde geschaltet. Rufe "
                 "set_state mit dem richtigen Befehl noch einmal auf."
             )
-        confirmations: list[str] = []
+        done: list[tuple[DeviceSpec, str]] = []
         reports: list[str] = []
         errors: list[str] = []
         for spec in targets:
@@ -301,11 +315,11 @@ def build_device_tools(service: DeviceService) -> list[Tool]:
             except DeviceError as exc:
                 errors.append(str(exc))
                 continue
-            confirmations.append(confirm_text(result.spec, result.command))
+            done.append((result.spec, result.command))
             reports.append(result.text)
         if not reports:
             raise ToolError("; ".join(errors))
-        ctx.final_replies.append("\n".join([*confirmations, *errors]))
+        ctx.final_replies.append("\n".join([*confirm_many(done), *errors]))
         return "\n".join([*reports, *(f"Fehler: {e}" for e in errors)])
 
     async def show_devices(args: dict[str, Any], ctx: ToolContext) -> str:

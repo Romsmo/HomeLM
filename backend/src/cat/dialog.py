@@ -170,7 +170,12 @@ async def handle_user_text(
                 await state.emit(ChatDelta(id=assistant_id, delta=delta))
                 if on_delta:
                     await on_delta(delta)
-            question = state.people.follow_up(channel, identity) if parts else None
+            # Nicht mitten im Befehl nach dem Namen fragen: nur nach Antworten ohne Werkzeug.
+            question = (
+                state.people.follow_up(channel, identity)
+                if parts and not state.turn_tooled
+                else None
+            )
             if question:
                 extra = f"\n\n{question}" if not on_delta else f" {question}"
                 parts.append(extra)
