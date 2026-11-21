@@ -21,7 +21,7 @@ from cat import (
 from cat.agent.responder import build_local_provider, build_responder
 from cat.config import Settings, get_settings
 from cat.intents.fillers import FillerWorkshop
-from cat.lan import LanOnlyMiddleware
+from cat.lan import LanOnlyMiddleware, LanPolicy, split_list
 from cat.llm.base import LLMProvider, TextDelta
 from cat.llm.litellm_provider import LiteLLMProvider
 from cat.memory.sessions import summarize_old_sessions
@@ -161,8 +161,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.responder == "agent":
         state.responder = build_responder(state, extra_tools=plugins.tools())
 
+    lan_policy = (
+        LanPolicy(split_list(settings.lan_trusted_hosts), split_list(settings.lan_trusted_ips))
+        if settings.lan_only
+        else None
+    )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        lan_task = (
+            asyncio.create_task(lan_policy.run()) if lan_policy and lan_policy.hosts else None
+        )
         await plugins.start()
         summary_task = _start_summaries(state)
         voice_task = _start_voice(state)
@@ -174,6 +183,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if lan_task:
+                lan_task.cancel()
             if warm_task:
                 warm_task.cancel()
             if summary_task:
@@ -190,8 +201,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.cat = state
     app.state.auth = state.auth
 
-    if settings.lan_only:
-        app.add_middleware(LanOnlyMiddleware)
+    if lan_policy is not None:
+        app.add_middleware(LanOnlyMiddleware, policy=lan_policy)
+        app.state.lan_policy = lan_policy
         if not settings.trusted_proxies.strip():
             log.info("CAT_LAN_ONLY ohne CAT_TRUSTED_PROXIES: gilt für die direkte Verbindung")
 

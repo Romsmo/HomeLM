@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Nur Heimnetz: Anfragen von öffentlichen Adressen bekommen 403, auch über Caddy (cat/lan.py).
     # Die Client-IP ist hinter dem Proxy nur dann echt, wenn `trusted_proxies` gesetzt ist.
     lan_only: bool = False
+    # Zusätzlich vertraut (komma-getrennt): Namen, deren aufgelöste Adresse als Heimnetz gilt, z. B.
+    # ai.catscastlecloud.de (NAT-Loopback des Routers, siehe cat/lan.py), und feste IPs/Netze.
+    lan_trusted_hosts: str = ""
+    lan_trusted_ips: str = ""
 
     # Login der Weboberfläche. Ohne Passwort ist kein Login möglich (fail closed).
     password: SecretStr | None = None
