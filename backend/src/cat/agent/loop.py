@@ -26,7 +26,15 @@ CORRECTION = (
 )
 NOT_A_COMMAND = (
     "Das habe ich nicht als Schaltbefehl verstanden, deshalb habe ich nichts geschaltet. "
-    "Sag es mir bitte als Befehl, zum Beispiel „Mach Romans Rollo auf“."
+    "Nachgesehen habe ich auch, daraus ergibt sich aber nichts, was ich tun oder sicher "
+    "beantworten könnte. Sag es mir bitte als Befehl, zum Beispiel „Mach Romans Rollo auf“."
+)
+# "Sonstiges": Der Text ist weder Befehl noch Frage über Geräte. Erst nachsehen (Geräte, Notizen),
+# dann ehrlich antworten, nichts raten und nichts behaupten.
+OTHER_HINT = (
+    "Fehler: Das war kein Schaltbefehl, nichts wurde geschaltet. Prüfe die Aussage oder beantworte "
+    "die Frage mit get_state, list_devices oder memory_search. Findest du nichts, sag ehrlich, "
+    "dass du es nicht weißt oder nicht klären kannst. Rate nicht und behaupte nichts."
 )
 UNVERIFIED = (
     "Das habe ich nicht ausgeführt, weil ich dafür kein Gerät angesprochen habe. "
@@ -95,9 +103,14 @@ class Agent:
             held: list[str] = []
             started = False  # in diesem Schritt schon Text ausgegeben?
             # Unbelegte Behauptungen über Geräte abfangen, solange noch kein Gerätewerkzeug lief.
+            # Ein bei "Sonstiges" abgewiesenes set_state belegt nichts: Erst nachsehen.
+            checked = any(
+                t.tool in DEVICE_TOOLS
+                and not (t.tool == "set_state" and ctx.other_tries and not t.ok)
+                for t in ctx.trace
+            )
             hold = guard and (
-                not any(t.tool in DEVICE_TOOLS for t in ctx.trace)
-                or (command and not any(t.tool == "set_state" for t in ctx.trace))
+                not checked or (command and not any(t.tool == "set_state" for t in ctx.trace))
             )
 
             model_started = time.perf_counter()
@@ -238,10 +251,13 @@ class Agent:
         if call.name == "set_state" and user_text:
             kind = intent_kind(user_text)
             if kind == "none":
-                # Ein Name ("Roman"), eine Erklärung, ein Rückblick oder eine bloße Feststellung
-                # ("Das Rollo ist zu") ist kein Schaltbefehl.
-                ctx.blocked = True
-                return "Fehler: Das war kein Schaltbefehl. Nichts wurde geschaltet.", False
+                # "Sonstiges": ein Name ("Roman"), eine Erklärung, ein Rückblick oder eine bloße
+                # Feststellung ("Das Rollo ist zu"). Geschaltet wird nie. Beim ersten Mal darf das
+                # Modell nachsehen und ehrlich antworten, danach endet der Zug mit NOT_A_COMMAND.
+                ctx.other_tries += 1
+                if ctx.other_tries > 1:
+                    ctx.blocked = True
+                return OTHER_HINT, False
             if kind == "read" and (reader := self._registry.get("get_state")) is not None:
                 # Eine Frage ("Ist das Rollo zu?") schaltet nie: Cat liest stattdessen den Zustand
                 # und antwortet damit.

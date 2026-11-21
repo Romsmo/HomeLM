@@ -574,9 +574,9 @@ async def test_a_name_or_an_explanation_never_switches_anything(tmp_path: Path) 
         "Ich hab doch nie gesagt, dass du das Rollo öffnen sollst",
         "Warum hast du Romans Rollo geöffnet?",
     ):
-        provider = FakeProvider(
-            [ToolCall("c", "set_state", {"device": "Romans Rollo", "command": "up"})]
-        )
+        call = ToolCall("c", "set_state", {"device": "Romans Rollo", "command": "up"})
+        # Das Modell darf nachsehen; bleibt es beim Schalten, endet der Zug ehrlich.
+        provider = FakeProvider([call], [call])
         out, ctx = await run(compact_agent(service, provider), text, True)
         assert "nicht als Schaltbefehl" in out and ctx.trace[0].ok is False
     assert backend.sent == []

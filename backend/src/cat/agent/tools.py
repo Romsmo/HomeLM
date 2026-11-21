@@ -46,6 +46,9 @@ class ToolContext:
     user_text: str = ""
     # Ein Schaltbefehl wurde abgewiesen, weil der Text keiner war: Der Agent fragt nach.
     blocked: bool = False
+    # Wie oft set_state bei "Sonstiges" (weder Befehl noch Frage) abgewiesen wurde: beim ersten
+    # Mal darf das Modell nachsehen und ehrlich antworten, beim zweiten Mal endet der Zug.
+    other_tries: int = 0
     # Fester Antworttext statt eines weiteren Modellschritts (z. B. unbekannter Begriff).
     clarify: str = ""
     # Alle Werkzeugaufrufe dieses Zuges in der Reihenfolge der Ausführung.

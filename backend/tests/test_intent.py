@@ -6,7 +6,7 @@ import pytest
 
 from cat.devices.service import RawState
 from cat.intents.text import intent_kind
-from cat.llm.base import ToolCall
+from cat.llm.base import TextDelta, ToolCall
 from tests.fakes import FakeProvider
 from tests.test_speed import agent_for, make, run
 
@@ -78,13 +78,49 @@ async def test_a_question_never_switches_anything_it_reads_instead(tmp_path: Pat
     assert ctx.trace[-1].result.startswith("Nur gelesen, nichts geschaltet")
 
 
-async def test_a_statement_is_not_a_command(tmp_path: Path) -> None:
+async def test_a_statement_never_switches_and_ends_honestly(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    call = ToolCall("c1", "set_state", {"device": "Romans Rollo", "command": "down"})
+    provider = FakeProvider([call], [call])  # das Modell bleibt beim Schalten
+    out, _ = await run(agent_for(service, provider), "Das Rollo ist zu", True)
+    assert backend.sent == [] and "nichts geschaltet" in out and "Nachgesehen" in out
+
+
+async def test_other_messages_get_a_look_and_then_an_answer(tmp_path: Path) -> None:
+    """Sonstiges: nicht schalten, sondern nachsehen und mit dem Gefundenen antworten."""
+    service, backend = make(tmp_path)
+    service.seed_states("openhab", {"RO2": RawState("100")})
+    provider = FakeProvider(
+        [ToolCall("c1", "set_state", {"device": "Romans Rollo", "command": "down"})],
+        [ToolCall("c2", "get_state", {"device": "Romans Rollo"})],
+    )
+    out, ctx = await run(agent_for(service, provider), "Das Rollo ist zu", True)
+    assert backend.sent == [] and "Romans Rollo" in out and "nicht als Schaltbefehl" not in out
+    hint = provider.calls[1]["messages"][-1]["content"]
+    assert "get_state" in hint and "ehrlich" in hint  # das Modell wurde zum Nachsehen geschickt
+    assert [t.tool for t in ctx.trace] == ["set_state", "get_state"]
+
+
+async def test_other_messages_the_model_cannot_solve_get_an_honest_answer(tmp_path: Path) -> None:
     service, backend = make(tmp_path)
     provider = FakeProvider(
-        [ToolCall("c1", "set_state", {"device": "Romans Rollo", "command": "down"})]
+        [ToolCall("c1", "set_state", {"device": "Romans Rollo", "command": "down"})],
+        [TextDelta("Das kann ich nicht klären, dazu habe ich nichts gefunden.")],
+        [TextDelta("Das kann ich nicht klären, dazu habe ich nichts gefunden.")],
     )
     out, _ = await run(agent_for(service, provider), "Das Rollo ist zu", True)
-    assert backend.sent == [] and "nichts geschaltet" in out
+    assert backend.sent == [] and "nicht klären" in out
+
+
+async def test_an_unchecked_claim_after_a_blocked_switch_is_not_shown(tmp_path: Path) -> None:
+    service, backend = make(tmp_path)
+    provider = FakeProvider(
+        [ToolCall("c1", "set_state", {"device": "Romans Rollo", "command": "down"})],
+        [TextDelta("Okay, das Rollo ist jetzt zu.")],  # ohne nachgesehen zu haben
+        [TextDelta("Okay, das Rollo ist jetzt zu.")],
+    )
+    out, _ = await run(agent_for(service, provider), "Das Rollo ist zu", True)
+    assert backend.sent == [] and "jetzt zu" not in out
 
 
 async def test_a_polite_request_is_carried_out(tmp_path: Path) -> None:
